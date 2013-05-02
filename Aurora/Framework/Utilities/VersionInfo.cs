@@ -47,9 +47,9 @@ namespace Aurora.Framework.Utilities
 
         #endregion
 
-        public const string VERSION_NUMBER = "0.5.4";
-        public const Flavour VERSION_FLAVOUR = Flavour.Dev;
-        public const string VERSION_NAME = "Aurora";
+        public const string VERSION_NUMBER = "0.3.002";
+        public const Flavour VERSION_FLAVOUR = Flavour.RC2;
+        public const string VERSION_NAME = "GalaxyGrid";
 
         public const int VERSIONINFO_VERSION_LENGTH = 27;
 
@@ -100,7 +100,7 @@ namespace Aurora.Framework.Utilities
                         string lastLine = lines[lines.Length - 1];
                         string[] splitLastLine = lastLine.Split(new string[2] {" ", "\t"},
                                                                 StringSplitOptions.RemoveEmptyEntries);
-                        versionString = "Aurora-" + splitLastLine[1].Substring(0, 6)
+                        versionString = "GalaxyGrid-" + splitLastLine[1].Substring(0, 6)
                                         /*First 6 digits of the commit hash*/+
                                         " " + splitLastLine[5] /*Time zone info*/;
                         FileStream s = File.Open(gitCommitFileName, FileMode.Create);

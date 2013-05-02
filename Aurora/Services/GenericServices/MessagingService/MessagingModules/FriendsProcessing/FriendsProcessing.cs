@@ -76,47 +76,58 @@ namespace Aurora.Services
             {
                 //A user has logged in or out... we need to update friends lists across the grid
 
-                ISyncMessagePosterService asyncPoster = m_registry.RequestModuleInterface<ISyncMessagePosterService>();
-                IFriendsService friendsService = m_registry.RequestModuleInterface<IFriendsService>();
-                if (asyncPoster != null && friendsService != null)
+                System.Threading.WaitCallback delayed = state =>
                 {
-                    //Get all friends
-                    object[] info = (object[]) parameters;
-                    UUID us = UUID.Parse(info[0].ToString());
-                    bool isOnline = bool.Parse(info[1].ToString());
+                    System.Threading.Thread.Sleep(5000);
+                    SendFriendStatusChanges(parameters);
+                };
 
-                    List<FriendInfo> friends = friendsService.GetFriends(us);
-                    List<UUID> OnlineFriends = new List<UUID>();
-                    foreach (FriendInfo friend in friends)
-                    {
-                        if (friend.TheirFlags == -1 || friend.MyFlags == -1)
-                            continue; //Not validiated yet!
-                        UUID FriendToInform = UUID.Zero;
-                        if (!UUID.TryParse(friend.Friend, out FriendToInform))
-                            continue;
-
-                        UserInfo user = m_agentInfoService.GetUserInfo(friend.Friend);
-                        //Now find their caps service so that we can find where they are root (and if they are logged in)
-                        if (user != null && user.IsOnline)
-                        {
-                            //Find the root agent
-                            OnlineFriends.Add(FriendToInform);
-                            //Post!
-                            asyncPoster.Post(user.CurrentRegionURI,
-                                             SyncMessageHelper.AgentStatusChange(us, FriendToInform, isOnline));
-                        }
-                    }
-                    //If the user is coming online, send all their friends online statuses to them
-                    if (isOnline)
-                    {
-                        UserInfo user = m_agentInfoService.GetUserInfo(us.ToString());
-                        if (user != null)
-                            asyncPoster.Post(user.CurrentRegionURI,
-                                             SyncMessageHelper.AgentStatusChanges(OnlineFriends, us, true));
-                    }
-                }
+                System.Threading.ThreadPool.QueueUserWorkItem(delayed);
             }
             return null;
+        }
+
+        private void SendFriendStatusChanges(object parameters)
+        {
+            ISyncMessagePosterService asyncPoster = m_registry.RequestModuleInterface<ISyncMessagePosterService>();
+            IFriendsService friendsService = m_registry.RequestModuleInterface<IFriendsService>();
+            if (asyncPoster != null && friendsService != null)
+            {
+                //Get all friends
+                object[] info = (object[])parameters;
+                UUID us = UUID.Parse(info[0].ToString());
+                bool isOnline = bool.Parse(info[1].ToString());
+
+                List<FriendInfo> friends = friendsService.GetFriends(us);
+                List<UUID> OnlineFriends = new List<UUID>();
+                foreach (FriendInfo friend in friends)
+                {
+                    if (friend.TheirFlags == -1 || friend.MyFlags == -1)
+                        continue; //Not validiated yet!
+                    UUID FriendToInform = UUID.Zero;
+                    if (!UUID.TryParse(friend.Friend, out FriendToInform))
+                        continue;
+
+                    UserInfo user = m_agentInfoService.GetUserInfo(friend.Friend);
+                    //Now find their caps service so that we can find where they are root (and if they are logged in)
+                    if (user != null && user.IsOnline)
+                    {
+                        //Find the root agent
+                        OnlineFriends.Add(FriendToInform);
+                        //Post!
+                        asyncPoster.Post(user.CurrentRegionURI,
+                                         SyncMessageHelper.AgentStatusChange(us, FriendToInform, isOnline));
+                    }
+                }
+                //If the user is coming online, send all their friends online statuses to them
+                if (isOnline)
+                {
+                    UserInfo user = m_agentInfoService.GetUserInfo(us.ToString());
+                    if (user != null)
+                        asyncPoster.Post(user.CurrentRegionURI,
+                                         SyncMessageHelper.AgentStatusChanges(OnlineFriends, us, true));
+                }
+            }
         }
 
         protected OSDMap OnMessageReceived(OSDMap message)
