@@ -105,6 +105,12 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
         protected Dictionary<UUID, UserInfoCacheEntry> m_userInfoCache =
             new Dictionary<UUID, UserInfoCacheEntry>();
 
+        /// <summary>
+        /// Determines whether OpenSim params can be used with
+        /// llSetPrimitiveParams etc.
+        /// </summary>
+        protected bool m_allowOpenSimParams = false;
+
         public void Initialize(IScriptModulePlugin ScriptEngine, ISceneChildEntity host, uint localID, UUID itemID,
                                ScriptProtectionModule module)
         {
@@ -122,6 +128,8 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                 m_ScriptEngine.Config.GetFloat("MinTimerInterval", 0.5f);
             m_automaticLinkPermission =
                 m_ScriptEngine.Config.GetBoolean("AutomaticLinkPermission", false);
+            m_allowOpenSimParams =
+                m_ScriptEngine.Config.GetBoolean("AllowOpenSimParamsInLLFunctions", false);
             m_notecardLineReadCharsMax =
                 m_ScriptEngine.Config.GetInt("NotecardLineReadCharsMax", 255);
             if (m_notecardLineReadCharsMax > 65535)
@@ -3056,7 +3064,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             }
 
             bool result = money.ObjectGiveMoney(
-                m_host.ParentEntity.UUID, m_host.OwnerID, toID, amount);
+                m_host.ParentEntity.UUID, m_host.Name, m_host.OwnerID, toID, amount);
 
             if (result)
                 return 1;
@@ -8344,7 +8352,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
         {
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID)) return;
 
-            SetPrimParams(m_host, rules);
+            SetPrimParams(m_host, rules, m_allowOpenSimParams);
         }
 
         public void llSetLinkPrimitiveParams(int linknumber, LSL_List rules)
@@ -8355,7 +8363,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             List<IEntity> parts = GetLinkPartsAndEntities(linknumber);
 
             foreach (IEntity part in parts)
-                SetPrimParams(part, rules);
+                SetPrimParams(part, rules, m_allowOpenSimParams);
         }
 
         public void llSetLinkPrimitiveParamsFast(int linknumber, LSL_List rules)
@@ -8363,7 +8371,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             List<ISceneChildEntity> parts = GetLinkParts(linknumber);
 
             foreach (ISceneChildEntity part in parts)
-                SetPrimParams(part, rules);
+                SetPrimParams(part, rules, m_allowOpenSimParams);
         }
 
         public LSL_Integer llGetLinkNumberOfSides(int LinkNum)
@@ -8373,7 +8381,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             return new LSL_Integer(faces);
         }
 
-        protected void SetPrimParams(IEntity part, LSL_List rules)
+        public void SetPrimParams(IEntity part, LSL_List rules, bool allowOpenSimParams)
         {
             int idx = 0;
 
@@ -8422,7 +8430,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
                     v = rules.GetVector3Item(idx++);
                     if (part is ISceneChildEntity)
-                        SetPos(part as ISceneChildEntity, v, true);
+                        SetPos(part as ISceneChildEntity, GetPartLocalPos(part as ISceneChildEntity) + v, true);
                     else if (part is IScenePresence)
                     {
                         (part as IScenePresence).OffsetPosition = new Vector3((float) v.x, (float) v.y, (float) v.z);
@@ -8885,6 +8893,46 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                     if (entities.Count > 0)
                         part = entities[0];
                 }
+                else if (code == (int)ScriptBaseClass.OS_PRIM_PROJECTION)
+                {
+                    if (remain < 5 || !allowOpenSimParams)
+                        return;
+                    bool projection = rules.GetLSLIntegerItem(idx++) != 0;
+                    string texture = rules.GetLSLStringItem(idx++);
+                    UUID textureKey;
+                    UUID.TryParse(texture, out textureKey);
+                    float fov = (float)rules.GetLSLFloatItem(idx++);
+                    float focus = (float)rules.GetLSLFloatItem(idx++);
+                    float ambiance =
+                            (float)rules.GetLSLFloatItem(idx++);
+
+                    if (part is ISceneChildEntity)
+                    {
+                        (part as ISceneChildEntity).Shape.ProjectionEntry = projection;
+                        (part as ISceneChildEntity).Shape.ProjectionTextureUUID = textureKey;
+                        (part as ISceneChildEntity).Shape.ProjectionFOV = fov;
+                        (part as ISceneChildEntity).Shape.ProjectionFocus = focus;
+                        (part as ISceneChildEntity).Shape.ProjectionAmbiance = ambiance;
+
+                        (part as ISceneChildEntity).ScheduleUpdate(PrimUpdateFlags.FullUpdate);
+                    }
+                }
+                else if (code == (int)ScriptBaseClass.OS_PRIM_VELOCITY)
+                {
+                    if (remain < 1 || !allowOpenSimParams)
+                        return;
+                    LSL_Vector velocity = rules.GetVector3Item(idx++);
+                    (part as ISceneChildEntity).Velocity = velocity.ToVector3();
+                    (part as ISceneChildEntity).ScheduleTerseUpdate();
+                }
+                else if (code == (int)ScriptBaseClass.OS_PRIM_ACCELERATION)
+                {
+                    if (remain < 1 || !allowOpenSimParams)
+                        return;
+                    LSL_Vector accel = rules.GetVector3Item(idx++);
+                    (part as ISceneChildEntity).Acceleration = accel.ToVector3();
+                    (part as ISceneChildEntity).ScheduleTerseUpdate();
+                }
             }
         }
 
@@ -9180,7 +9228,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID))
                 return new LSL_List();
 
-            return GetLinkPrimitiveParams(m_host, rules);
+            return GetLinkPrimitiveParams(m_host, rules, m_allowOpenSimParams);
         }
 
         public LSL_List llGetLinkPrimitiveParams(int linknumber, LSL_List rules)
@@ -9193,11 +9241,11 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
             LSL_List res = new LSL_List();
 
-            return parts.Select(part => GetLinkPrimitiveParams(part, rules))
+            return parts.Select(part => GetLinkPrimitiveParams(part, rules, m_allowOpenSimParams))
                         .Aggregate(res, (current, partRes) => current + partRes);
         }
 
-        public LSL_List GetLinkPrimitiveParams(ISceneChildEntity part, LSL_List rules)
+        public LSL_List GetLinkPrimitiveParams(ISceneChildEntity part, LSL_List rules, bool allowOpenSimParams)
         {
             LSL_List res = new LSL_List();
             int idx = 0;
@@ -9595,7 +9643,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                 {
                     res.Add(new LSL_Integer(part.PhysicsType));
                 }
-                else if (code == (int) ScriptBaseClass.PRIM_LINK_TARGET)
+                else if (code == (int)ScriptBaseClass.PRIM_LINK_TARGET)
                 {
                     if (remain < 1)
                         continue;
@@ -9603,6 +9651,29 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                     List<ISceneChildEntity> entities = GetLinkParts(nextLink);
                     if (entities.Count > 0)
                         part = entities[0];
+                }
+                else if (code == (int)ScriptBaseClass.OS_PRIM_PROJECTION)
+                {
+                    if (!allowOpenSimParams)
+                        return null;
+                    res.Add((LSL_Integer)(
+                            part.Shape.ProjectionEntry ? 1 : 0));
+                    res.Add((LSL_Key)part.Shape.ProjectionTextureUUID.ToString());
+                    res.Add((LSL_Float)part.Shape.ProjectionFOV);
+                    res.Add((LSL_Float)part.Shape.ProjectionFocus);
+                    res.Add((LSL_Float)part.Shape.ProjectionAmbiance);
+                }
+                else if (code == (int)ScriptBaseClass.OS_PRIM_VELOCITY)
+                {
+                    if (!allowOpenSimParams)
+                        return null;
+                    res.Add(new LSL_Vector(part.Velocity));
+                }
+                else if (code == (int)ScriptBaseClass.OS_PRIM_ACCELERATION)
+                {
+                    if (!allowOpenSimParams)
+                        return null;
+                    res.Add(new LSL_Vector(part.Acceleration));
                 }
             }
             return res;
@@ -12270,6 +12341,11 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
             if (count > 16)
                 count = 16;
+            else if (count <= 0)
+            {
+                LSLError("You must request at least one result from llCastRay.");
+                return new LSL_List();
+            }
 
             List<ContactResult> results = new List<ContactResult>();
 
@@ -12288,7 +12364,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
             if (checkPhysical || checkNonPhysical || detectPhantom)
             {
-                ContactResult[] objectHits = ObjectIntersection(rayStart, rayEnd, checkPhysical, checkNonPhysical, detectPhantom);
+                ContactResult[] objectHits = ObjectIntersection(rayStart, rayEnd, checkPhysical, checkNonPhysical, detectPhantom, count+2);
                 for (int iter = 0; iter < objectHits.Length; iter++)
                 {
                     // Redistance the Depth because the Scene RayCaster returns distance from center to make the rezzing code simpler.
@@ -12318,8 +12394,12 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                     continue;
 
                 // physics ray can return colisions with host prim
+                // this is supposed to happen
                 if (m_host.LocalId == result.ConsumerID)
                     continue;
+
+                if (!checkTerrain && result.ConsumerID == 0)
+                    continue; //Terrain
 
                 UUID itemID = UUID.Zero;
                 int linkNum = 0;
@@ -12348,13 +12428,17 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                 }
 
                 list.Add(new LSL_String(itemID.ToString()));
-                list.Add(new LSL_String(result.Pos.ToString()));
 
                 if ((dataFlags & ScriptBaseClass.RC_GET_LINK_NUM) == ScriptBaseClass.RC_GET_LINK_NUM)
                     list.Add(new LSL_Integer(linkNum));
 
+                list.Add(new LSL_Vector(result.Pos));
+
                 if ((dataFlags & ScriptBaseClass.RC_GET_NORMAL) == ScriptBaseClass.RC_GET_NORMAL)
-                    list.Add(new LSL_Vector(result.Normal));
+                {
+                    Vector3 norm = result.Normal * -1;
+                    list.Add(new LSL_Vector(norm));
+                }
 
                 values++;
                 if (values >= count)
@@ -12418,101 +12502,99 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             return contacts.ToArray();
         }
 
-        private ContactResult[] ObjectIntersection(Vector3 rayStart, Vector3 rayEnd, bool includePhysical, bool includeNonPhysical, bool includePhantom)
+        private ContactResult[] ObjectIntersection(Vector3 rayStart, Vector3 rayEnd, bool includePhysical, bool includeNonPhysical, bool includePhantom, int max)
         {
-            Ray ray = new Ray(rayStart, Vector3.Normalize(rayEnd - rayStart));
-            List<ContactResult> contacts = new List<ContactResult>();
+            List<ContactResult> contacts = World.PhysicsScene.RaycastWorld(rayStart, Vector3.Normalize(rayEnd - rayStart), Vector3.Distance(rayEnd, rayStart), max);
 
-            Vector3 ab = rayEnd - rayStart;
-
-            World.ForEachSceneEntity(delegate(ISceneEntity group)
+            for (int i = 0; i < contacts.Count; i++)
             {
-                if (m_host.ParentEntity == group)
-                    return;
+                ISceneEntity grp = World.GetGroupByPrim(contacts[i].ConsumerID);
+                if(grp == null || (!includePhysical && grp.RootChild.PhysActor.IsPhysical) || 
+                    (!includeNonPhysical && !grp.RootChild.PhysActor.IsPhysical))
+                    contacts.RemoveAt(i--);
+            }
 
-                if (group.IsAttachment)
-                    return;
+            if (includePhantom)
+            {
+                Ray ray = new Ray(rayStart, Vector3.Normalize(rayEnd - rayStart));
 
-                if (group.RootChild.PhysActor == null)
+                Vector3 ab = rayEnd - rayStart;
+
+                ISceneEntity[] objlist = World.Entities.GetEntities();
+                foreach (ISceneEntity group in objlist)
                 {
-                    if (!includePhantom)
-                        return;
+                    if (m_host.ParentEntity == group)
+                        continue;
+
+                    if (group.IsAttachment)
+                        continue;
+
+                    if (group.RootChild.PhysActor != null)
+                        continue;
+
+
+                    // Find the radius ouside of which we don't even need to hit test
+                    float minX;
+                    float maxX;
+                    float minY;
+                    float maxY;
+                    float minZ;
+                    float maxZ;
+
+                    float radius = 0.0f;
+
+                    group.GetAxisAlignedBoundingBoxRaw(out minX, out maxX, out minY, out maxY, out minZ, out maxZ);
+
+                    if (Math.Abs(minX) > radius)
+                        radius = Math.Abs(minX);
+                    if (Math.Abs(minY) > radius)
+                        radius = Math.Abs(minY);
+                    if (Math.Abs(minZ) > radius)
+                        radius = Math.Abs(minZ);
+                    if (Math.Abs(maxX) > radius)
+                        radius = Math.Abs(maxX);
+                    if (Math.Abs(maxY) > radius)
+                        radius = Math.Abs(maxY);
+                    if (Math.Abs(maxZ) > radius)
+                        radius = Math.Abs(maxZ);
+                    radius = radius * 1.413f;
+                    Vector3 ac = group.AbsolutePosition - rayStart;
+                    //                Vector3 bc = group.AbsolutePosition - rayEnd;
+
+                    double d = Math.Abs(Vector3.Mag(Vector3.Cross(ab, ac)) / Vector3.Distance(rayStart, rayEnd));
+
+                    // Too far off ray, don't bother
+                    if (d > radius)
+                        continue;
+
+                    // Behind ray, drop
+                    double d2 = Vector3.Dot(Vector3.Negate(ab), ac);
+                    if (d2 > 0)
+                        continue;
+
+                    ray = new Ray(rayStart, Vector3.Normalize(rayEnd - rayStart));
+                    EntityIntersection intersection = group.TestIntersection(ray, true, false);
+                    // Miss.
+                    if (!intersection.HitTF)
+                        continue;
+
+                    Vector3 b1 = new Vector3(minX, minY, minZ);
+                    Vector3 b2 = new Vector3(maxX, maxY, maxZ);
+                    //m_log.DebugFormat("[LLCASTRAY]: min<{0},{1},{2}>, max<{3},{4},{5}> = hitp<{6},{7},{8}>", b1.X,b1.Y,b1.Z,b2.X,b2.Y,b2.Z,intersection.ipoint.X,intersection.ipoint.Y,intersection.ipoint.Z);
+                    if (!(intersection.ipoint.X >= b1.X && intersection.ipoint.X <= b2.X &&
+                        intersection.ipoint.Y >= b1.Y && intersection.ipoint.Y <= b2.Y &&
+                        intersection.ipoint.Z >= b1.Z && intersection.ipoint.Z <= b2.Z))
+                        continue;
+
+                    ContactResult result = new ContactResult();
+                    result.ConsumerID = group.LocalId;
+                    result.Depth = intersection.distance;
+                    result.Normal = intersection.normal;
+                    result.Pos = intersection.ipoint;
+
+                    contacts.Add(result);
                 }
-                else
-                {
-                    if (group.RootChild.PhysActor.IsPhysical)
-                    {
-                        if (!includePhysical)
-                            return;
-                    }
-                    else
-                    {
-                        if (!includeNonPhysical)
-                            return;
-                    }
-                }
-
-                // Find the radius ouside of which we don't even need to hit test
-                float minX;
-                float maxX;
-                float minY;
-                float maxY;
-                float minZ;
-                float maxZ;
-
-                float radius = 0.0f;
-
-                group.GetAxisAlignedBoundingBoxRaw(out minX, out maxX, out minY, out maxY, out minZ, out maxZ);
-
-                if (Math.Abs(minX) > radius)
-                    radius = Math.Abs(minX);
-                if (Math.Abs(minY) > radius)
-                    radius = Math.Abs(minY);
-                if (Math.Abs(minZ) > radius)
-                    radius = Math.Abs(minZ);
-                if (Math.Abs(maxX) > radius)
-                    radius = Math.Abs(maxX);
-                if (Math.Abs(maxY) > radius)
-                    radius = Math.Abs(maxY);
-                if (Math.Abs(maxZ) > radius)
-                    radius = Math.Abs(maxZ);
-                radius = radius * 1.413f;
-                Vector3 ac = group.AbsolutePosition - rayStart;
-                //                Vector3 bc = group.AbsolutePosition - rayEnd;
-
-                double d = Math.Abs(Vector3.Mag(Vector3.Cross(ab, ac)) / Vector3.Distance(rayStart, rayEnd));
-
-                // Too far off ray, don't bother
-                if (d > radius)
-                    return;
-
-                // Behind ray, drop
-                double d2 = Vector3.Dot(Vector3.Negate(ab), ac);
-                if (d2 > 0)
-                    return;
-
-                ray = new Ray(rayStart, Vector3.Normalize(rayEnd - rayStart));
-                EntityIntersection intersection = group.TestIntersection(ray, true, false);
-                // Miss.
-                if (!intersection.HitTF)
-                    return;
-
-                Vector3 b1 = group.AbsolutePosition + new Vector3(minX, minY, minZ);
-                Vector3 b2 = group.AbsolutePosition + new Vector3(maxX, maxY, maxZ);
-                //m_log.DebugFormat("[LLCASTRAY]: min<{0},{1},{2}>, max<{3},{4},{5}> = hitp<{6},{7},{8}>", b1.X,b1.Y,b1.Z,b2.X,b2.Y,b2.Z,intersection.ipoint.X,intersection.ipoint.Y,intersection.ipoint.Z);
-                if (!(intersection.ipoint.X >= b1.X && intersection.ipoint.X <= b2.X &&
-                    intersection.ipoint.Y >= b1.Y && intersection.ipoint.Y <= b2.Y &&
-                    intersection.ipoint.Z >= b1.Z && intersection.ipoint.Z <= b2.Z))
-                    return;
-
-                ContactResult result = new ContactResult();
-                result.ConsumerID = group.LocalId;
-                result.Depth = intersection.distance;
-                result.Normal = intersection.normal;
-                result.Pos = intersection.ipoint;
-
-                contacts.Add(result);
-            });
+            }
 
             return contacts.ToArray();
         }
@@ -12859,7 +12941,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             if (obj.OwnerID != m_host.OwnerID)
                 return;
 
-            SetPrimParams(obj, rules);
+            SetPrimParams(obj, rules, m_allowOpenSimParams);
         }
 
         public LSL_List GetLinkPrimitiveParamsEx(LSL_Key prim, LSL_List rules)
@@ -12871,7 +12953,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             if (obj.OwnerID == m_host.OwnerID)
                 return new LSL_List();
 
-            return GetLinkPrimitiveParams(obj, rules);
+            return GetLinkPrimitiveParams(obj, rules, true);
         }
 
         public void print(string str)
@@ -12945,14 +13027,14 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             }
             List<Vector3> positions = new List<Vector3>();
             List<Quaternion> rotations = new List<Quaternion>();
-            List<int> times = new List<int>();
+            List<float> times = new List<float>();
             for (int i = 0; i < keyframes.Length; i += (dataType == KeyframeAnimation.Data.Both ? 3 : 2))
             {
                 if (dataType == KeyframeAnimation.Data.Both ||
                     dataType == KeyframeAnimation.Data.Translation)
                 {
                     LSL_Vector pos = keyframes.GetVector3Item(i);
-                    positions.Add(pos.ToVector3());
+                    positions.Add(m_host.AbsolutePosition + pos.ToVector3());
                 }
                 if (dataType == KeyframeAnimation.Data.Both ||
                     dataType == KeyframeAnimation.Data.Rotation)
@@ -12962,8 +13044,8 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                     quat.Normalize();
                     rotations.Add(quat);
                 }
-                int time = keyframes.GetLSLIntegerItem(i + (dataType == KeyframeAnimation.Data.Both ? 2 : 1));
-                times.Add(time);
+                LSL_Float time = keyframes.GetLSLFloatItem(i + (dataType == KeyframeAnimation.Data.Both ? 2 : 1));
+                times.Add((float)time);
             }
             KeyframeAnimation animation = new KeyframeAnimation
                                               {
@@ -13006,7 +13088,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                 data = llList2CSV(new LSL_Types.list("GROUP_OWNED"));
             else if (moneyMod != null)
             {
-                success = moneyMod.Transfer(UUID.Parse(destination), m_host.OwnerID, amt, "");
+                success = moneyMod.Transfer(UUID.Parse(destination), m_host.OwnerID, amt, "", TransactionType.ObjectPays);
                 data =
                     llList2CSV(success
                                    ? new LSL_List(destination, amt)

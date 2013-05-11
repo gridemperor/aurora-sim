@@ -86,22 +86,9 @@ namespace Aurora.Modules.WorldMap
             if (!m_Enabled)
                 return;
 
-            lock (scene)
-            {
-                m_scene = scene;
-
-                m_scene.RegisterModuleInterface<IWorldMapModule>(this);
-
-                if (MainConsole.Instance != null)
-                {
-                    MainConsole.Instance.Commands.AddCommand(
-                        "export-map",
-                        "export-map [<path>]",
-                        "Save an image of the world map", HandleExportWorldMapConsoleCommand);
-                }
-
-                AddHandlers();
-            }
+            m_scene = scene;
+            m_scene.RegisterModuleInterface<IWorldMapModule>(this);
+            AddHandlers();
         }
 
         public virtual void RemoveRegion(IScene scene)
@@ -109,12 +96,9 @@ namespace Aurora.Modules.WorldMap
             if (!m_Enabled)
                 return;
 
-            lock (m_scene)
-            {
-                m_Enabled = false;
-                RemoveHandlers();
-                m_scene = null;
-            }
+            m_Enabled = false;
+            RemoveHandlers();
+            m_scene = null;
         }
 
         public virtual void RegionLoaded(IScene scene)
@@ -147,12 +131,12 @@ namespace Aurora.Modules.WorldMap
         // this has to be called with a lock on m_scene
         protected virtual void AddHandlers()
         {
-            string regionimage = "regionImage" + m_scene.RegionInfo.RegionID.ToString();
+            string regionimage = "/index.php?method=regionImage" + m_scene.RegionInfo.RegionID.ToString();
             regionimage = regionimage.Replace("-", "");
             MainConsole.Instance.Debug("[WORLD MAP]: JPEG Map location: " + MainServer.Instance.ServerURI +
-                                       "/index.php?method=" + regionimage);
+                                       regionimage);
 
-            MainServer.Instance.AddHTTPHandler(new GenericStreamHandler("GET", regionimage, OnHTTPGetMapImage));
+            MainServer.Instance.AddStreamHandler(new GenericStreamHandler("GET", regionimage, OnHTTPGetMapImage));
 
             m_scene.EventManager.OnNewClient += OnNewClient;
             m_scene.EventManager.OnClosingClient += OnClosingClient;
@@ -164,9 +148,9 @@ namespace Aurora.Modules.WorldMap
             m_scene.EventManager.OnNewClient -= OnNewClient;
             m_scene.EventManager.OnClosingClient -= OnClosingClient;
 
-            string regionimage = "regionImage" + m_scene.RegionInfo.RegionID.ToString();
+            string regionimage = "/index.php?method=regionImage" + m_scene.RegionInfo.RegionID.ToString();
             regionimage = regionimage.Replace("-", "");
-            MainServer.Instance.RemoveHttpStreamHandler(regionimage);
+            MainServer.Instance.RemoveStreamHandler("GET", regionimage);
         }
 
         #region EventHandlers
@@ -432,7 +416,7 @@ namespace Aurora.Modules.WorldMap
 
                         foreach (GridRegion region in regions)
                         {
-                            if ((item.mapBlocks & 0) == 0 || (item.mapBlocks & 0x10000) != 0)
+                            if ((item.mapBlocks & 0) == 0)
                                 mapBlocks.Add(MapBlockFromGridRegion(region, region.RegionLocX, region.RegionLocY));
                             else if ((item.mapBlocks & 1) == 1)
                                 mapBlocks.Add(TerrainBlockFromGridRegion(region));
@@ -461,7 +445,7 @@ namespace Aurora.Modules.WorldMap
 
                         foreach (GridRegion region in regions)
                         {
-                            if ((item.mapBlocks & 0) == 0 || (item.mapBlocks & 0x10000) != 0)
+                            if ((item.mapBlocks & 0) == 0)
                                 mapBlocks.Add(MapBlockFromGridRegion(region, region.RegionLocX, region.RegionLocY));
                             else if ((item.mapBlocks & 1) == 1)
                                 mapBlocks.Add(TerrainBlockFromGridRegion(region));
@@ -755,77 +739,6 @@ namespace Aurora.Modules.WorldMap
         {
             ImageCodecInfo[] encoders = ImageCodecInfo.GetImageEncoders();
             return encoders.FirstOrDefault(t => t.MimeType == mimeType);
-        }
-
-        /// <summary>
-        ///     Export the world map
-        /// </summary>
-        /// <param name="cmdparams"></param>
-        public void HandleExportWorldMapConsoleCommand(string[] cmdparams)
-        {
-            if (MainConsole.Instance.ConsoleScene != m_scene)
-            {
-                if (MainConsole.Instance.ConsoleScene == null && !MainConsole.Instance.HasProcessedCurrentCommand)
-                    MainConsole.Instance.HasProcessedCurrentCommand = true;
-                else
-                    return;
-            }
-
-            string exportPath = cmdparams.Length > 1 ? cmdparams[1] : DEFAULT_WORLD_MAP_EXPORT_PATH;
-
-            MainConsole.Instance.InfoFormat(
-                "[WORLD MAP]: Exporting world map for {0} to {1}", m_scene.RegionInfo.RegionName, exportPath);
-
-            List<GridRegion> regions = m_scene.GridService.GetRegionRange(null,
-                                                                          m_scene.RegionInfo.RegionLocX -
-                                                                          (9*Constants.RegionSize),
-                                                                          m_scene.RegionInfo.RegionLocX +
-                                                                          (9*Constants.RegionSize),
-                                                                          m_scene.RegionInfo.RegionLocY -
-                                                                          (9*Constants.RegionSize),
-                                                                          m_scene.RegionInfo.RegionLocY +
-                                                                          (9*Constants.RegionSize));
-            List<Image> bitImages = new List<Image>();
-
-            List<byte[]> textures =
-                regions.Select(r => m_scene.AssetService.GetData(r.TerrainImage.ToString()))
-                       .Where(texAsset => texAsset != null)
-                       .ToList();
-
-            foreach (byte[] asset in textures)
-            {
-                Image image;
-
-                if ((image = m_scene.RequestModuleInterface<IJ2KDecoder>().DecodeToImage(asset)) != null)
-                    bitImages.Add(image);
-            }
-
-            const int size = 2560;
-            const int offsetSize = size/10/2;
-            Bitmap mapTexture = new Bitmap(size, size);
-            Graphics g = Graphics.FromImage(mapTexture);
-            SolidBrush sea = new SolidBrush(Color.DarkBlue);
-            g.FillRectangle(sea, 0, 0, size, size);
-
-            int regionXOffset = (m_scene.RegionInfo.RegionSizeX/2 - 128)*-1; //Neg because the image is upside down
-            const int regionYOffset = 0; // (m_scene.RegionInfo.RegionSizeY / 2 - 128) * -1;
-
-            for (int i = 0; i < regions.Count; i++)
-            {
-                int regionSizeOffset = regions[i].RegionSizeX/2 - 128;
-                int x = ((regions[i].RegionLocX - m_scene.RegionInfo.RegionLocX)/Constants.RegionSize) + 10;
-                int y = ((regions[i].RegionLocY - m_scene.RegionInfo.RegionLocY)/Constants.RegionSize) + 10;
-                if (i < bitImages.Count)
-                    g.DrawImage(bitImages[i], (x*offsetSize) + regionXOffset,
-                                size - (y*offsetSize + regionSizeOffset) + regionYOffset, regions[i].RegionSizeX/2,
-                                regions[i].RegionSizeY/2); // y origin is top
-            }
-
-            mapTexture.Save(exportPath, ImageFormat.Jpeg);
-
-            MainConsole.Instance.InfoFormat(
-                "[WORLD MAP]: Successfully exported world map for {0} to {1}",
-                m_scene.RegionInfo.RegionName, exportPath);
         }
 
         private class MapItemRequester

@@ -9,6 +9,8 @@ using OpenMetaverse;
 using OpenMetaverse.StructuredData;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 
 namespace Simple.Currency
 {
@@ -140,12 +142,100 @@ namespace Simple.Currency
             return gb;
         }
 
-        [CanBeReflected(ThreatLevel = ThreatLevel.Low)]
-        public bool UserCurrencyTransfer(UUID toID, UUID fromID, UUID toObjectID, UUID fromObjectID, uint amount,
+        public int CalculateEstimatedCost(uint amount)
+        {
+            return Convert.ToInt32(
+                Math.Round(((float.Parse(amount.ToString()) /
+                            m_config.RealCurrencyConversionFactor) +
+                            ((float.Parse(amount.ToString()) /
+                            m_config.RealCurrencyConversionFactor) *
+                            (m_config.AdditionPercentage / 10000.0)) +
+                            (m_config.AdditionAmount / 100.0)) * 100));
+        }
+
+        public int CheckMinMaxTransferSettings(UUID agentID, uint amount)
+        {
+            amount = Math.Max(amount, (uint)m_config.MinAmountPurchasable);
+            amount = Math.Min(amount, (uint)m_config.MaxAmountPurchasable);
+            List<uint> recentTransactions = GetAgentRecentTransactions(agentID);
+
+            long currentlyBought = recentTransactions.Sum((u) => u);
+            return (int)Math.Min(amount, m_config.MaxAmountPurchasableOverTime - currentlyBought);
+        }
+
+        public bool InworldCurrencyBuyTransaction(UUID agentID, uint amount, IPEndPoint ep)
+        {
+            amount = (uint)CheckMinMaxTransferSettings(agentID, amount);
+            if (amount == 0)
+                return false;
+            UserCurrencyTransfer(agentID, UUID.Zero, amount,
+                                             "Inworld purchase", TransactionType.SystemGenerated, UUID.Zero);
+
+            //Log to the database
+            List<object> values = new List<object>
+            {
+                UUID.Random(),                         // TransactionID
+                agentID.ToString(),                    // PrincipalID
+                ep.ToString(),                         // IP
+                amount,                                // Amount
+                CalculateEstimatedCost(amount),        // Actual cost
+                Utils.GetUnixTime(),                   // Created
+                Utils.GetUnixTime()                    // Updated
+            };
+            m_gd.Insert("simple_purchased", values.ToArray());
+            return true;
+        }
+
+        private List<uint> GetAgentRecentTransactions(UUID agentID)
+        {
+            QueryFilter filter = new QueryFilter();
+            filter.andFilters["PrincipalID"] = agentID;
+            DateTime now = DateTime.Now;
+            RepeatType runevertype = (RepeatType)Enum.Parse(typeof(RepeatType), m_config.MaxAmountPurchasableEveryType);
+            switch (runevertype)
+            {
+                case RepeatType.second:
+                    now = now.AddSeconds(-m_config.MaxAmountPurchasableEveryAmount);
+                    break;
+                case RepeatType.minute:
+                    now = now.AddMinutes(-m_config.MaxAmountPurchasableEveryAmount);
+                    break;
+                case RepeatType.hours:
+                    now = now.AddHours(-m_config.MaxAmountPurchasableEveryAmount);
+                    break;
+                case RepeatType.days:
+                    now = now.AddDays(-m_config.MaxAmountPurchasableEveryAmount);
+                    break;
+                case RepeatType.weeks:
+                    now = now.AddDays(-m_config.MaxAmountPurchasableEveryAmount * 7);
+                    break;
+                case RepeatType.months:
+                    now = now.AddMonths(-m_config.MaxAmountPurchasableEveryAmount);
+                    break;
+                case RepeatType.years:
+                    now = now.AddYears(-m_config.MaxAmountPurchasableEveryAmount);
+                    break;
+            }
+            filter.andGreaterThanEqFilters["Created"] = Utils.DateTimeToUnixTime(now);//Greater than the time that we are checking against
+            filter.andLessThanEqFilters["Created"] = Utils.GetUnixTime();//Less than now
+            List<string> query = m_gd.Query(new string[1] { "Amount" }, "simple_purchased", filter, null, null, null);
+            if (query == null)
+                return new List<uint>();
+            return query.ConvertAll<uint>(s=>uint.Parse(s));
+        }
+
+        public bool UserCurrencyTransfer(UUID toID, UUID fromID, uint amount,
                                          string description, TransactionType type, UUID transactionID)
         {
-            object remoteValue = DoRemoteByURL("CurrencyServerURI", toID, fromID, toObjectID, fromObjectID, amount,
-                                               description, type, transactionID);
+            return UserCurrencyTransfer(toID, fromID, UUID.Zero, "", UUID.Zero, "", amount, description, type, transactionID);
+        }
+
+        [CanBeReflected(ThreatLevel = ThreatLevel.Low)]
+        public bool UserCurrencyTransfer(UUID toID, UUID fromID, UUID toObjectID, string toObjectName, UUID fromObjectID,
+            string fromObjectName, uint amount, string description, TransactionType type, UUID transactionID)
+        {
+            object remoteValue = DoRemoteByURL("CurrencyServerURI", toID, fromID, toObjectID, toObjectName, fromObjectID,
+                fromObjectName, amount, description, type, transactionID);
             if (remoteValue != null || m_doRemoteOnly)
                 return (bool) remoteValue;
 
@@ -183,7 +273,11 @@ namespace Simple.Currency
                 UserAccount fromAccount = m_registry.RequestModuleInterface<IUserAccountService>()
                                                     .GetUserAccount(null, fromID);
                 if (m_config.SaveTransactionLogs)
-                    AddTransactionRecord((transactionID == UUID.Zero ? UUID.Random() : transactionID), description, toID, fromID, amount, type, (toCurrency == null ? 0 : toCurrency.Amount), (fromCurrency == null ? 0 : fromCurrency.Amount), (toAccount == null ? "System" : toAccount.Name), (fromAccount == null ? "System" : fromAccount.Name));
+                    AddTransactionRecord((transactionID == UUID.Zero ? UUID.Random() : transactionID), 
+                        description, toID, fromID, amount, type, (toCurrency == null ? 0 : toCurrency.Amount), 
+                        (fromCurrency == null ? 0 : fromCurrency.Amount), (toAccount == null ? "System" : toAccount.Name), 
+                        (fromAccount == null ? "System" : fromAccount.Name), toObjectName, fromObjectName, (fromUserInfo == null ? 
+                        UUID.Zero : fromUserInfo.CurrentRegionID));
 
                 if (fromID == toID)
                 {
@@ -220,9 +314,13 @@ namespace Simple.Currency
         }
 
         // Method Added By Alicia Raven
-        private void AddTransactionRecord(UUID TransID, string Description, UUID ToID, UUID FromID, uint Amount, TransactionType TransType, uint ToBalance, uint FromBalance, string ToName, string FromName)
+        private void AddTransactionRecord(UUID TransID, string Description, UUID ToID, UUID FromID, uint Amount,
+            TransactionType TransType, uint ToBalance, uint FromBalance, string ToName, string FromName, string toObjectName, string fromObjectName, UUID regionID)
         {
-            m_gd.Insert("simple_currency_history", new object[] { TransID, (Description == null ? "" : Description), FromID.ToString(), FromName, ToID.ToString(), ToName, Amount, (int)TransType, Util.UnixTimeSinceEpoch(), ToBalance, FromBalance });
+            if(Amount > m_config.MaxAmountBeforeLogging)
+                m_gd.Insert("simple_currency_history", new object[] { TransID, (Description == null ? "" : Description),
+                    FromID.ToString(), FromName, ToID.ToString(), ToName, Amount, (int)TransType, Util.UnixTimeSinceEpoch(), ToBalance, FromBalance,
+                    toObjectName == null ? "" : toObjectName, fromObjectName == null ? "" : fromObjectName, regionID });
         }
 
         #endregion
@@ -340,7 +438,6 @@ namespace Simple.Currency
                 MainConsole.Instance.Info("No account found");
                 return;
             }
-            var currency = GetUserCurrency(account.PrincipalID);
             m_gd.Update(_REALM,
                         new Dictionary<string, object>
                             {

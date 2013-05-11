@@ -89,7 +89,7 @@ namespace Simple.Currency
                 if (UUID.TryParse((string) requestData["agentId"], out agentId))
                 {
                     uint amountBuying = uint.Parse(requestData["currencyBuy"].ToString());
-                    m_connector.UserCurrencyTransfer(agentId, UUID.Zero, UUID.Zero, UUID.Zero, amountBuying,
+                    m_connector.UserCurrencyTransfer(agentId, UUID.Zero, amountBuying,
                                                      "Inworld purchase", TransactionType.SystemGenerated, UUID.Zero);
                     success = true;
                 }
@@ -111,6 +111,7 @@ namespace Simple.Currency
                 if (m_connector.GetConfig().CanBuyCurrencyInworld)
                 {
                     uint amount = uint.Parse(requestData["currencyBuy"].ToString());
+                    amount = (uint)m_connector.CheckMinMaxTransferSettings(UUID.Parse(requestData["agentId"].ToString()), amount);
                     returnval.Value = new Hashtable
                                           {
                                               {"success", true},
@@ -118,7 +119,7 @@ namespace Simple.Currency
                                                   "currency",
                                                   new Hashtable
                                                       {
-                                                          {"estimatedCost", 0},
+                                                          {"estimatedCost", m_connector.CalculateEstimatedCost(amount)},
                                                           {"currencyBuy", (int) amount}
                                                       }
                                               },
@@ -164,9 +165,7 @@ namespace Simple.Currency
                 if (UUID.TryParse((string) requestData["agentId"], out agentId))
                 {
                     uint amountBuying = uint.Parse(requestData["currencyBuy"].ToString());
-                    m_connector.UserCurrencyTransfer(agentId, UUID.Zero, UUID.Zero, UUID.Zero, amountBuying,
-                                                     "Inworld purchase", TransactionType.SystemGenerated, UUID.Zero);
-                    success = true;
+                    success = m_connector.InworldCurrencyBuyTransaction(agentId, amountBuying, ep);
                 }
             }
             XmlRpcResponse returnval = new XmlRpcResponse();

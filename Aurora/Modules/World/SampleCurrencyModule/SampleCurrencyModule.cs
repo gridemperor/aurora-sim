@@ -57,6 +57,11 @@ namespace Aurora.Modules.SampleCurrencyModule
             get { return 0; }
         }
 
+        public int DirectoryFeeCharge
+        {
+            get { return 0; }
+        }
+
         public int ClientPort
         {
             get { return m_config.Configs["Handlers"].GetInt("LLLoginHandlerPort", (int) MainServer.Instance.Port); }
@@ -66,17 +71,12 @@ namespace Aurora.Modules.SampleCurrencyModule
 
         public event ObjectPaid OnObjectPaid;
 
-        public bool Transfer(UUID toID, UUID fromID, int amount, string description)
-        {
-            return true;
-        }
-
         public bool Transfer(UUID toID, UUID fromID, int amount, string description, TransactionType type)
         {
             return true;
         }
 
-        public bool Transfer(UUID toID, UUID fromID, UUID toObjectID, UUID fromObjectID, int amount, string description,
+        public bool Transfer(UUID toID, UUID fromID, UUID toObjectID, string toObjectName, UUID fromObjectID, string fromObjectName, int amount, string description,
                              TransactionType type)
         {
             if ((type == TransactionType.PayObject) && (OnObjectPaid != null))
@@ -156,12 +156,12 @@ namespace Aurora.Modules.SampleCurrencyModule
             return 0;
         }
 
-        public bool Charge(UUID agentID, int amount, string text)
+        public bool Charge(UUID agentID, int amount, string text, TransactionType type)
         {
             return true;
         }
 
-        public bool ObjectGiveMoney(UUID objectID, UUID fromID, UUID toID, int amount)
+        public bool ObjectGiveMoney(UUID objectID, string objectName, UUID fromID, UUID toID, int amount)
         {
             return true;
         }
@@ -194,7 +194,7 @@ namespace Aurora.Modules.SampleCurrencyModule
         }
 
         /// <summary>
-        ///     Sends the the stored money balance to the client
+        ///     Sends the stored money balance to the client
         /// </summary>
         /// <param name="client"></param>
         /// <param name="agentID"></param>
@@ -237,7 +237,7 @@ namespace Aurora.Modules.SampleCurrencyModule
 
             quoteResponse.Add("success", false);
             quoteResponse.Add("errorMessage", "Invalid parameters passed to the quote box");
-            quoteResponse.Add("errorURI", "http://www.opensimulator.org/wiki");
+            quoteResponse.Add("errorURI", "http://aurora-sim.org/wiki");
             returnval.Value = quoteResponse;
             return returnval;
         }
@@ -321,11 +321,6 @@ namespace Aurora.Modules.SampleCurrencyModule
                                          0, 0, 0, 0, 0,
                                          0, 0, 0, 0, 0,
                                          0, 0);
-        }
-
-        public bool Charge(IClientAPI client, int amount)
-        {
-            return true;
         }
 
         #endregion

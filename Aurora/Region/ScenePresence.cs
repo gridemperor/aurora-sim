@@ -227,8 +227,6 @@ namespace Aurora.Region
         /// </summary>
         private Vector3 posLastSignificantMove;
 
-        private Vector3 posLastTerseUpdate;
-
         private UUID CollisionSoundID = UUID.Zero;
         private int CollisionSoundLastTriggered = 0;
 
@@ -1824,7 +1822,6 @@ namespace Aurora.Region
             m_requestedSitTargetUUID = part.UUID;
             m_sitting = true;
             part.SetAvatarOnSitTarget(UUID);
-            var root = part.ParentEntity.RootChild;
             if (SitTargetisSet)
             {
                 offset = new Vector3(avSitOffSet.X, avSitOffSet.Y, avSitOffSet.Z);
@@ -1864,19 +1861,19 @@ namespace Aurora.Region
                                 case PrimType.TORUS:
                                 case PrimType.CYLINDER:
                                 case PrimType.BOX:
-                                    Position.Z += part.Scale.Z/2f;
-                                    Position.Z += appearance.Appearance.AvatarHeight/2;
-                                    Position.Z -= (float) (SIT_TARGET_ADJUSTMENT.Z/1.5);
-                                        //m_appearance.AvatarHeight / 15;
-                                    MovePos.X = (part.Scale.X/2) + .1f;
+                                    Position.Z += part.Scale.Z / 2f;
+                                    Position.Z += appearance.Appearance.AvatarHeight / 2;
+                                    Position.Z -= (float)(SIT_TARGET_ADJUSTMENT.Z / 1.5);
+                                    //m_appearance.AvatarHeight / 15;
+                                    MovePos.X = (part.Scale.X / 2) + .1f;
                                     MovePos *= Rotation;
                                     break;
                                 case PrimType.SPHERE:
-                                    Position.Z += part.Scale.Z/2f;
-                                    Position.Z += appearance.Appearance.AvatarHeight/2;
-                                    Position.Z -= (float) (SIT_TARGET_ADJUSTMENT.Z/1.5);
-                                        //m_appearance.AvatarHeight / 15;
-                                    MovePos.X = (float) (part.Scale.X/2.5);
+                                    Position.Z += part.Scale.Z / 2f;
+                                    Position.Z += appearance.Appearance.AvatarHeight / 2;
+                                    Position.Z -= (float)(SIT_TARGET_ADJUSTMENT.Z / 1.5);
+                                    //m_appearance.AvatarHeight / 15;
+                                    MovePos.X = (float)(part.Scale.X / 2.5);
                                     MovePos *= Rotation;
                                     break;
                             }
@@ -2242,7 +2239,6 @@ namespace Aurora.Region
             // Minimum Draw distance is 64 meters, the Radius of the draw distance sphere is 32m
             double tmpsq = m_sceneViewer.Prioritizer.ChildReprioritizationDistance;
             tmpsq *= tmpsq;
-            float vel = Velocity.LengthSquared();
             if (Vector3.DistanceSquared(AbsolutePosition, m_lastChildAgentUpdatePosition) >= tmpsq ||
                 Vector3.DistanceSquared(CameraPosition, m_lastChildAgentUpdateCamPosition) >= tmpsq)
 

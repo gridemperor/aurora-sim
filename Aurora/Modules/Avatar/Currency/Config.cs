@@ -16,6 +16,7 @@ namespace Simple.Currency
 
         private uint m_priceUpload = 0;
         private uint m_priceGroupCreate = 0;
+        private uint m_priceDirectoryFee = 0;
         private int m_stipend = 0;
         private string m_upgradeMembershipUri = "";
 
@@ -30,6 +31,15 @@ namespace Simple.Currency
         private bool m_StipendsLoadOldUsers = true;
         private bool m_GiveStipendsOnlyWhenLoggedIn = false;
         private bool m_saveTransactionLogs = false;
+        private int m_maxAmountBeforeLogging = -1;
+        private int m_AdditionPercentage = 291;
+        private int m_AdditionAmount = 30;
+        private int m_realCurrencyConversionFactor = 1;
+        private int m_maxAmountPurchasable = 10000;
+        private int m_maxAmountPurchasableOverTime = 100000;
+        private int m_maxAmountPurchasableEveryAmount = 1;
+        private string m_maxAmountPurchasableEveryType = "week";
+        private int m_minAmountPurchasable = 0;
 
         #endregion
 
@@ -192,6 +202,12 @@ namespace Simple.Currency
             set { m_priceUpload = (uint) value; }
         }
 
+        public int PriceDirectoryFee
+        {
+            get { return (int)m_priceDirectoryFee; }
+            set { m_priceDirectoryFee = (uint)value; }
+        }
+
         public bool StipendsPremiumOnly
         {
             get { return m_stipendsPremiumOnly; }
@@ -226,6 +242,60 @@ namespace Simple.Currency
         {
             get { return m_saveTransactionLogs; }
             set { m_saveTransactionLogs = value; }
+        }
+
+        public int MaxAmountBeforeLogging
+        {
+            get { return m_maxAmountBeforeLogging; }
+            set { m_maxAmountBeforeLogging = value; }
+        }
+
+        public int AdditionPercentage
+        {
+            get { return m_AdditionPercentage; }
+            set { m_AdditionPercentage = value; }
+        }
+
+        public int AdditionAmount
+        {
+            get { return m_AdditionAmount; }
+            set { m_AdditionAmount = value; }
+        }
+
+        public int RealCurrencyConversionFactor
+        {
+            get { return m_realCurrencyConversionFactor; }
+            set { m_realCurrencyConversionFactor = value; }
+        }
+
+        public int MaxAmountPurchasable
+        {
+            get { return m_maxAmountPurchasable; }
+            set { m_maxAmountPurchasable = value; }
+        }
+
+        public int MaxAmountPurchasableOverTime
+        {
+            get { return m_maxAmountPurchasableOverTime; }
+            set { m_maxAmountPurchasableOverTime = value; }
+        }
+
+        public int MaxAmountPurchasableEveryAmount
+        {
+            get { return m_maxAmountPurchasableEveryAmount; }
+            set { m_maxAmountPurchasableEveryAmount = value; }
+        }
+
+        public string MaxAmountPurchasableEveryType
+        {
+            get { return m_maxAmountPurchasableEveryType; }
+            set { m_maxAmountPurchasableEveryType = value; }
+        }
+
+        public int MinAmountPurchasable
+        {
+            get { return m_minAmountPurchasable; }
+            set { m_minAmountPurchasable = value; }
         }
 
         #endregion

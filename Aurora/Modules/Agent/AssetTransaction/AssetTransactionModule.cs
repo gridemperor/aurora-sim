@@ -47,7 +47,6 @@ namespace Aurora.Modules.Agent.AssetTransaction
         private readonly Dictionary<UUID, AgentAssetTransactions> AgentTransactions =
             new Dictionary<UUID, AgentAssetTransactions>();
 
-        private readonly Dictionary<UUID, IScene> RegisteredScenes = new Dictionary<UUID, IScene>();
         private IScene m_scene;
 
         //[Obsolete] //As long as this is being used to get objects that are not region specific, this is fine to use
@@ -277,7 +276,7 @@ namespace Aurora.Modules.Agent.AssetTransaction
 
                 if (mm != null)
                 {
-                    if (!mm.Charge(remoteClient, mm.UploadCharge))
+                    if (!mm.Charge(remoteClient.AgentId, mm.UploadCharge, "", TransactionType.UploadCharge))
                     {
                         remoteClient.SendAgentAlertMessage("Unable to upload asset. Insufficient funds.", false);
                         return;

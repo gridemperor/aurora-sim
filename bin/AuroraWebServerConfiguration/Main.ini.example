@@ -22,8 +22,6 @@
 
 [Handlers]
     ;; Add any handlers here that you want to use
-    LLLoginHandler = LLLoginServiceInConnector
-    GridInfoInHandler = GridInfoServerInConnector
 
     AgentInfoHandler = AgentInfoService
     AssetHandler = AssetService
@@ -36,6 +34,7 @@
     FreeSwitchHandler = FreeswitchService
     FriendsHandler = FriendsService
     GridHandler = GridService
+    GridInfoInHandler = GridInfoServerInConnector
     GridWideMessage = GridWideMessageModule
     InventoryHandler = InventoryService
 	LoginHandler = LLLoginService

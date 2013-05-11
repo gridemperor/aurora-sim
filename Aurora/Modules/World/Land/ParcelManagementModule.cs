@@ -244,7 +244,7 @@ namespace Aurora.Modules.Land
             return true;
         }
 
-        private void moneyModule_OnUserDidNotPay(UUID agentID, string paymentTextThatFailed)
+        private void moneyModule_OnUserDidNotPay(UUID agentID, string identifier, string paymentTextThatFailed)
         {
             UUID parcelGlobalID = UUID.Parse(paymentTextThatFailed.Substring("Parcel Show in Search Fee - ".Length));
             ILandObject parcel;
@@ -988,7 +988,7 @@ namespace Aurora.Modules.Land
             if (module != null)
                 if (
                     !module.Transfer(landObject.LandData.OwnerID, client.AgentId, landObject.LandData.PassPrice,
-                                     "Parcel Pass"))
+                                     "Parcel Pass", TransactionType.LandPassSale))
                 {
                     client.SendAlertMessage("You do not have enough funds to complete this transaction.");
                     return;
@@ -1691,9 +1691,7 @@ namespace Aurora.Modules.Land
 
         public void EventManagerOnIncomingLandDataFromStorage(List<LandData> data, Vector2 parcelOffset)
         {
-            bool result = true;
-            foreach (LandData t in data.Where(t => !PreprocessIncomingLandObjectFromStorage(t, parcelOffset)))
-                result = false;
+            bool result = data.All(t => PreprocessIncomingLandObjectFromStorage(t, parcelOffset));
 
             if (!result || data.Count == 0) //Force a new base first, then force a merge later
                 ResetSimLandObjects();
@@ -1844,7 +1842,7 @@ namespace Aurora.Modules.Land
                 MainConsole.Instance.WarnFormat("[LAND] unable to retrieve IClientAPI for {0}", agentID.ToString());
                 return OSDParser.SerializeLLSDXmlBytes(new OSDMap());
             }
-            OSDMap args = (OSDMap) OSDParser.DeserializeLLSDXml(request);
+            OSDMap args = (OSDMap) OSDParser.DeserializeLLSDXml(HttpServerHandlerHelpers.ReadFully(request));
 
             ILandObject o = GetLandObject(args["local-id"].AsInteger());
 
@@ -1866,7 +1864,7 @@ namespace Aurora.Modules.Land
             }
 
             ParcelPropertiesUpdateMessage properties = new ParcelPropertiesUpdateMessage();
-            OSDMap args = (OSDMap) OSDParser.DeserializeLLSDXml(request);
+            OSDMap args = (OSDMap) OSDParser.DeserializeLLSDXml(HttpServerHandlerHelpers.ReadFully(request));
 
             properties.Deserialize(args);
 
@@ -1928,7 +1926,7 @@ namespace Aurora.Modules.Land
             UUID parcelID = UUID.Zero;
             try
             {
-                OSDMap map = (OSDMap) OSDParser.DeserializeLLSDXml(request);
+                OSDMap map = (OSDMap) OSDParser.DeserializeLLSDXml(HttpServerHandlerHelpers.ReadFully(request));
                 if ((map.ContainsKey("region_id") || map.ContainsKey("region_handle")) && map.ContainsKey("location"))
                 {
                     UUID regionID = map["region_id"].AsUUID();

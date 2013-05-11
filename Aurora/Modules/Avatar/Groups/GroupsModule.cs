@@ -231,7 +231,7 @@ namespace Aurora.Modules.Groups
                 try
                 {
                     // do the transaction, that is if the agent has got sufficient funds
-                    if (!money.Charge(GetRequestingAgentID(remoteClient), money.GroupCreationCharge, "Group Creation"))
+                    if (!money.Charge(GetRequestingAgentID(remoteClient), money.GroupCreationCharge, "Group Creation", TransactionType.GroupCreate))
                     {
                         remoteClient.SendCreateGroupReply(UUID.Zero, false,
                                                           "You have got insuficient funds to create a group.");
@@ -1808,7 +1808,7 @@ namespace Aurora.Modules.Groups
                                                                       OSHttpRequest httpRequest,
                                                                       OSHttpResponse httpResponse)
                                                                  {
-                                                                     return GroupProposalBallot(request.ReadUntilEnd(),
+                                                                     return GroupProposalBallot(HttpServerHandlerHelpers.ReadString(request),
                                                                                                 agentID);
                                                                  }));
             retVal["StartGroupProposal"] = CapsUtil.CreateCAPS("StartGroupProposal", "");
@@ -1817,7 +1817,7 @@ namespace Aurora.Modules.Groups
                                                                       OSHttpRequest httpRequest,
                                                                       OSHttpResponse httpResponse)
                                                                  {
-                                                                     return StartGroupProposal(request.ReadUntilEnd(),
+                                                                     return StartGroupProposal(HttpServerHandlerHelpers.ReadString(request),
                                                                                                agentID);
                                                                  }));
             return retVal;
