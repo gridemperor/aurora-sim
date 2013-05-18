@@ -63,6 +63,8 @@ namespace Aurora.ClientStack
         ///     Debug packet level.  See OpenSim.RegisterConsoleCommands() for more details.
         /// </value>
         private int m_debugPacketLevel;
+        private List<string> m_debugPackets = new List<string>();
+        private List<string> m_debugRemovePackets = new List<string>();
 
         private readonly bool m_allowUDPInv;
 
@@ -188,6 +190,7 @@ namespace Aurora.ClientStack
         public event ParcelReclaim OnParcelReclaim;
         public event ParcelReturnObjectsRequest OnParcelReturnObjectsRequest;
         public event ParcelReturnObjectsRequest OnParcelDisableObjectsRequest;
+        public event VelocityInterpolateChangeRequest OnVelocityInterpolateChangeRequest;
         public event ParcelDeedToGroup OnParcelDeedToGroup;
         public event RegionInfoRequest OnRegionInfoRequest;
         public event EstateCovenantRequest OnEstateCovenantRequest;
@@ -516,6 +519,20 @@ namespace Aurora.ClientStack
         {
             m_debugPacketLevel = newDebug;
         }
+        
+        public void SetDebugPacketName(string packetName, bool remove)
+        {
+            if (remove)
+            {
+                m_debugRemovePackets.Add(packetName);
+                m_debugPackets.Remove(packetName);
+            }
+            else
+            {
+                m_debugPackets.Add(packetName);
+                m_debugRemovePackets.Remove(packetName);
+            }
+        }
 
         #region Client Methods
 
@@ -842,28 +859,28 @@ namespace Aurora.ClientStack
         // Don't remove transaction ID! Groups and item gives need to set it!
         public void SendInstantMessage(GridInstantMessage im)
         {
-            if (m_scene.Permissions.CanInstantMessage(im.fromAgentID, im.toAgentID))
+            if (m_scene.Permissions.CanInstantMessage(im.FromAgentID, im.ToAgentID))
             {
                 ImprovedInstantMessagePacket msg
                     = (ImprovedInstantMessagePacket) PacketPool.Instance.GetPacket(PacketType.ImprovedInstantMessage);
 
-                msg.AgentData.AgentID = im.fromAgentID;
+                msg.AgentData.AgentID = im.FromAgentID;
                 msg.AgentData.SessionID = UUID.Zero;
-                msg.MessageBlock.FromAgentName = Util.StringToBytes256(im.fromAgentName);
-                msg.MessageBlock.Dialog = im.dialog;
-                msg.MessageBlock.FromGroup = im.fromGroup;
-                if (im.imSessionID == UUID.Zero)
-                    msg.MessageBlock.ID = im.fromAgentID ^ im.toAgentID;
+                msg.MessageBlock.FromAgentName = Util.StringToBytes256(im.FromAgentName);
+                msg.MessageBlock.Dialog = im.Dialog;
+                msg.MessageBlock.FromGroup = im.FromGroup;
+                if (im.SessionID == UUID.Zero)
+                    msg.MessageBlock.ID = im.FromAgentID ^ im.ToAgentID;
                 else
-                    msg.MessageBlock.ID = im.imSessionID;
-                msg.MessageBlock.Offline = im.offline;
-                msg.MessageBlock.ParentEstateID = im.ParentEstateID;
+                    msg.MessageBlock.ID = im.SessionID;
+                msg.MessageBlock.Offline = im.Offline;
+                msg.MessageBlock.ParentEstateID = 0;
                 msg.MessageBlock.Position = im.Position;
                 msg.MessageBlock.RegionID = im.RegionID;
-                msg.MessageBlock.Timestamp = im.timestamp;
-                msg.MessageBlock.ToAgentID = im.toAgentID;
-                msg.MessageBlock.Message = Util.StringToBytes1024(im.message);
-                msg.MessageBlock.BinaryBucket = im.binaryBucket;
+                msg.MessageBlock.Timestamp = im.Timestamp;
+                msg.MessageBlock.ToAgentID = im.ToAgentID;
+                msg.MessageBlock.Message = Util.StringToBytes1024(im.Message);
+                msg.MessageBlock.BinaryBucket = im.BinaryBucket;
 
                 OutPacket(msg, ThrottleOutPacketType.AvatarInfo);
             }
@@ -2520,8 +2537,17 @@ namespace Aurora.ClientStack
         public void SendBlueBoxMessage(UUID FromAvatarID, String FromAvatarName, String Message)
         {
             if (!ChildAgentStatus())
-                SendInstantMessage(new GridInstantMessage(null, FromAvatarID, FromAvatarName, AgentId, 1, Message, false,
-                                                          new Vector3()));
+                SendInstantMessage(new GridInstantMessage()
+            {
+                FromAgentID = FromAvatarID,
+                FromAgentName = FromAvatarName,
+                ToAgentID = AgentId,
+                Dialog = (byte)InstantMessageDialog.MessageBox,
+                Message = Message,
+                Offline = 0,
+                Position = new Vector3(),
+                RegionID = Scene.RegionInfo.RegionID
+            });
 
             //SendInstantMessage(FromAvatarID, fromSessionID, Message, AgentId, SessionId, FromAvatarName, (byte)21,(uint) Util.UnixTimeSinceEpoch());
         }
@@ -5687,6 +5713,8 @@ namespace Aurora.ClientStack
             AddLocalPacketHandler(PacketType.TeleportCancel, HandleTeleportCancel);
             AddLocalPacketHandler(PacketType.ViewerStartAuction, HandleViewerStartAuction);
             AddLocalPacketHandler(PacketType.ParcelDisableObjects, HandleParcelDisableObjects);
+            AddLocalPacketHandler(PacketType.VelocityInterpolateOn, HandleVelocityInterpolate);
+            AddLocalPacketHandler(PacketType.VelocityInterpolateOff, HandleVelocityInterpolate);
         }
 
         #region Packet Handlers
@@ -6201,17 +6229,20 @@ namespace Aurora.ClientStack
 
             if (handlerInstantMessage != null)
             {
-                GridInstantMessage im = new GridInstantMessage(Scene,
-                                                               msgpack.AgentData.AgentID,
-                                                               IMfromName,
-                                                               msgpack.MessageBlock.ToAgentID,
-                                                               msgpack.MessageBlock.Dialog,
-                                                               msgpack.MessageBlock.FromGroup,
-                                                               IMmessage,
-                                                               msgpack.MessageBlock.ID,
-                                                               msgpack.MessageBlock.Offline != 0,
-                                                               msgpack.MessageBlock.Position,
-                                                               msgpack.MessageBlock.BinaryBucket);
+                GridInstantMessage im = new GridInstantMessage()
+                    {
+                        RegionID = Scene.RegionInfo.RegionID,
+                        FromAgentID = msgpack.AgentData.AgentID,
+                        FromAgentName = IMfromName,
+                        ToAgentID = msgpack.MessageBlock.ToAgentID,
+                        Dialog = msgpack.MessageBlock.Dialog,
+                        FromGroup = msgpack.MessageBlock.FromGroup,
+                        Message = IMmessage,
+                        SessionID = msgpack.MessageBlock.ID,
+                        Offline = msgpack.MessageBlock.Offline,
+                        Position = msgpack.MessageBlock.Position,
+                        BinaryBucket = msgpack.MessageBlock.BinaryBucket
+                    };
 
                 PreSendImprovedInstantMessage handlerPreSendInstantMessage = OnPreSendInstantMessage;
                 if (handlerPreSendInstantMessage != null)
@@ -10861,6 +10892,18 @@ namespace Aurora.ClientStack
             return false;
         }
 
+        private bool HandleVelocityInterpolate(IClientAPI client, Packet packet)
+        {
+            VelocityInterpolateChangeRequest handlerVelocityInterpolateChangeRequest = OnVelocityInterpolateChangeRequest;
+
+            if (handlerVelocityInterpolateChangeRequest != null)
+            {
+                handlerVelocityInterpolateChangeRequest(packet is VelocityInterpolateOnPacket, this);
+                return true;
+            }
+            return false;
+        }
+
         private bool HandleTeleportCancel(IClientAPI client, Packet packet)
         {
             TeleportCancel handlerTeleportCancel = OnTeleportCancel;
@@ -12723,7 +12766,7 @@ namespace Aurora.ClientStack
         private void OutPacket(Packet packet, ThrottleOutPacketType throttlePacketType, bool doAutomaticSplitting,
                                UnackedPacketMethod resendMethod, UnackedPacketMethod finishedMethod)
         {
-            if (m_debugPacketLevel > 0)
+            if (m_debugPacketLevel > 0 || m_debugPackets.Contains(packet.Type.ToString()))
             {
                 bool outputPacket = true;
 
@@ -12752,8 +12795,11 @@ namespace Aurora.ClientStack
                     && packet.Type == PacketType.ObjectPropertiesFamily)
                     outputPacket = false;
 
-                if (outputPacket)
-                    MainConsole.Instance.DebugFormat("[CLIENT]: Packet OUT {0}", packet.Type);
+                if (m_debugPackets.Contains(packet.Type.ToString()))
+                    outputPacket = true;
+
+                if (outputPacket && !m_debugRemovePackets.Contains(packet.Type.ToString()))
+                    MainConsole.Instance.DebugFormat("[CLIENT ({1})]: Packet OUT {0}", packet.Type, Name);
             }
 
             m_udpServer.SendPacket(m_udpClient, packet, throttlePacketType, doAutomaticSplitting, resendMethod,
@@ -12820,7 +12866,7 @@ namespace Aurora.ClientStack
         /// <param name="packet">OpenMetaverse.packet</param>
         public void ProcessInPacket(Packet packet)
         {
-            if (m_debugPacketLevel > 0)
+            if (m_debugPacketLevel > 0 || m_debugPackets.Contains(packet.Type.ToString()))
             {
                 bool outputPacket = true;
 
@@ -12834,8 +12880,11 @@ namespace Aurora.ClientStack
                     (packet.Type == PacketType.ViewerEffect || packet.Type == PacketType.AgentAnimation))
                     outputPacket = false;
 
-                if (outputPacket)
-                    MainConsole.Instance.DebugFormat("[CLIENT]: Packet IN {0}", packet.Type);
+                if (m_debugPackets.Contains(packet.Type.ToString()))
+                    outputPacket = true;
+
+                if (outputPacket && !m_debugRemovePackets.Contains(packet.Type.ToString()))
+                    MainConsole.Instance.DebugFormat("[CLIENT ({1})]: Packet IN {0}", packet.Type, Name);
             }
 
             if (!ProcessPacketMethod(packet))

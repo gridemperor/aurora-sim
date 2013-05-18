@@ -440,32 +440,13 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             return invItemID;
         }
 
-        protected UUID InventoryKey(string name, int type)
+        protected UUID InventoryKey(string name, AssetType type, bool throwExceptionIfDoesNotExist)
         {
             lock (m_host.TaskInventory)
             {
                 foreach (KeyValuePair<UUID, TaskInventoryItem> inv in m_host.TaskInventory)
                 {
-                    if (inv.Value.Name == name)
-                    {
-                        if (inv.Value.Type != type)
-                            return UUID.Zero;
-
-                        return inv.Value.AssetID;
-                    }
-                }
-            }
-
-            return UUID.Zero;
-        }
-
-        protected UUID InventoryKey(string name, bool throwExceptionIfDoesNotExist)
-        {
-            lock (m_host.TaskInventory)
-            {
-                foreach (KeyValuePair<UUID, TaskInventoryItem> inv in m_host.TaskInventory)
-                {
-                    if (inv.Value.Name == name)
+                    if (inv.Value.Name == name && inv.Value.Type == (int)type)
                     {
                         return inv.Value.AssetID;
                     }
@@ -476,7 +457,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             {
                 IChatModule chatModule = World.RequestModuleInterface<IChatModule>();
                 if (chatModule != null)
-                    chatModule.SimChat("Could not find sound '" + name + "'.",
+                    chatModule.SimChat("Could not find item '" + name + "'.",
                                        ChatTypeEnum.DebugChannel, 2147483647, m_host.AbsolutePosition,
                                        m_host.Name, m_host.UUID, false, World);
             }
@@ -493,18 +474,25 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
         /// <param name="k"></param>
         /// <param name="throwExceptionIfDoesNotExist"></param>
         /// <returns></returns>
-        protected UUID KeyOrName(string k, bool throwExceptionIfDoesNotExist)
+        protected UUID KeyOrName(string k, AssetType type, bool throwExceptionIfDoesNotExist)
         {
             UUID key = UUID.Zero;
 
             // if we can parse the string as a key, use it.
             if (UUID.TryParse(k, out key))
             {
-                return key;
+                TaskInventoryItem itm;
+                lock (m_host.TaskInventory)
+                    m_host.TaskInventory.TryGetValue(key, out itm);
+                if(itm != null && itm.Type == (int)type)
+                    return key;
+                else if(itm == null)
+                    return key;
+                //The item was not of the right type
             }
             // else try to locate the name in inventory of object. found returns key,
             // not found returns UUID.Zero which will translate to the default particle texture
-            return InventoryKey(k, throwExceptionIfDoesNotExist);
+            return InventoryKey(k, type, throwExceptionIfDoesNotExist);
         }
 
         // convert a LSL_Rotation to a Quaternion
@@ -1031,7 +1019,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                 if (presence != null)
                 {
                     if (chatModule != null)
-                        chatModule.TrySendChatMessage(presence, m_host.AbsolutePosition, m_host.AbsolutePosition,
+                        chatModule.TrySendChatMessage(presence, m_host.AbsolutePosition,
                                                       m_host.UUID, m_host.Name, ChatTypeEnum.Say, text,
                                                       ChatSourceType.Object, 10000);
                 }
@@ -2000,9 +1988,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID))
                 return DateTime.Now;
 
-            bool found = SetTexture(m_host, texture, face);
-            if (!found)
-                ShoutError("Could not find texture '" + texture + "'");
+            SetTexture(m_host, texture, face);
             return PScriptSleep(200);
         }
 
@@ -2025,12 +2011,9 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             UUID textureID = new UUID();
             int ns = GetNumberOfSides(part);
 
-            textureID = InventoryKey(texture, (int) AssetType.Texture);
+            textureID = KeyOrName(texture, (int)AssetType.Texture, true);
             if (textureID == UUID.Zero)
-            {
-                if (!UUID.TryParse(texture, out textureID))
-                    return false;
-            }
+                return false;
 
             Primitive.TextureEntry tex = part.Shape.Textures;
 
@@ -2682,7 +2665,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
 
             // send the sound, once, to all clients in range
-            m_host.SendSound(KeyOrName(sound, true).ToString(), volume, false, 0, 0, false, false);
+            m_host.SendSound(KeyOrName(sound, AssetType.Sound, true).ToString(), volume, false, 0, 0);
         }
 
         // Xantor 20080528 we should do this differently.
@@ -2697,13 +2680,13 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
         {
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID)) return;
 
-            if (m_host.Sound == KeyOrName(sound, true))
+            if (m_host.Sound == KeyOrName(sound, AssetType.Sound, true))
                 return;
 
             if (m_host.Sound != UUID.Zero)
                 llStopSound();
 
-            m_host.Sound = KeyOrName(sound, true);
+            m_host.Sound = KeyOrName(sound, AssetType.Sound, true);
             m_host.SoundGain = volume;
             m_host.SoundFlags = (byte) SoundFlags.Loop; // looping
             if (m_host.SoundRadius == 0)
@@ -2716,33 +2699,35 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
         {
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID)) return;
 
-            m_host.ParentEntity.LoopSoundMasterPrim = m_host;
             lock (m_host.ParentEntity.LoopSoundSlavePrims)
             {
-                foreach (ISceneChildEntity prim in m_host.ParentEntity.LoopSoundSlavePrims)
+                m_host.ParentEntity.LoopSoundMasterPrim = m_host.UUID;
+                foreach (UUID child in m_host.ParentEntity.LoopSoundSlavePrims)
                 {
-                    if (prim.Sound != UUID.Zero)
-                        llStopSound();
+                    ISceneChildEntity part = m_host.ParentEntity.GetChildPart(child);
+                    if (part == null)
+                        continue;
+                    part.Sound = KeyOrName(sound, AssetType.Sound, true);
+                    part.SoundGain = volume;
+                    part.AdjustSoundGain(volume);
+                    part.SoundFlags = (byte)SoundFlags.Loop; // looping
+                    if (part.SoundRadius == 0)
+                        part.SoundRadius = 20; // Magic number, 20 seems reasonable. Make configurable?
 
-                    prim.Sound = KeyOrName(sound, true);
-                    prim.SoundGain = volume;
-                    prim.SoundFlags = (byte) SoundFlags.Loop; // looping
-                    if (prim.SoundRadius == 0)
-                        prim.SoundRadius = 20; // Magic number, 20 seems reasonable. Make configurable?
-
-                    prim.ScheduleUpdate(PrimUpdateFlags.FindBest);
+                    part.ScheduleUpdate(PrimUpdateFlags.FindBest);
                 }
             }
-            if (m_host.Sound != UUID.Zero)
-                llStopSound();
+            //if (m_host.Sound != UUID.Zero)
+            //    llStopSound();
 
-            m_host.Sound = KeyOrName(sound, true);
+            m_host.AdjustSoundGain(volume);
+            m_host.Sound = KeyOrName(sound, AssetType.Sound, true);
             m_host.SoundGain = volume;
             m_host.SoundFlags = (byte) SoundFlags.Loop; // looping
             if (m_host.SoundRadius == 0)
                 m_host.SoundRadius = 20; // Magic number, 20 seems reasonable. Make configurable?
 
-            m_host.ScheduleUpdate(PrimUpdateFlags.FindBest);
+            m_host.ScheduleUpdate(PrimUpdateFlags.ForcedFullUpdate);
         }
 
         public void llLoopSoundSlave(string sound, double volume)
@@ -2751,7 +2736,9 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
             lock (m_host.ParentEntity.LoopSoundSlavePrims)
             {
-                m_host.ParentEntity.LoopSoundSlavePrims.Add(m_host);
+                if(m_host.UUID != m_host.ParentEntity.LoopSoundMasterPrim &&
+                    !m_host.ParentEntity.LoopSoundSlavePrims.Contains(m_host.UUID))//Can't set the master as a slave
+                    m_host.ParentEntity.LoopSoundSlavePrims.Add(m_host.UUID);
             }
         }
 
@@ -2761,7 +2748,24 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
 
             // send the sound, once, to all clients in range
-            m_host.SendSound(KeyOrName(sound, true).ToString(), volume, false, 0, 0, true, false);
+            //This kinda works, but I haven't found a way to be able to tell the client to sync it with the looping master sound
+            if (m_host.ParentEntity.LoopSoundMasterPrim != UUID.Zero)
+            {
+                ISceneChildEntity part = m_host.ParentEntity.GetChildPart(m_host.ParentEntity.LoopSoundMasterPrim);
+                if (part != null)
+                {
+                    foreach (IScenePresence sp in m_host.ParentEntity.Scene.GetScenePresences())
+                    {
+                        //sp.ControllingClient.SendPlayAttachedSound(part.Sound, part.UUID, part.OwnerID, (float)part.SoundGain, (byte)SoundFlags.Stop);
+                        sp.ControllingClient.SendPlayAttachedSound(KeyOrName(sound, AssetType.Sound, true), m_host.UUID, m_host.OwnerID, (float)(m_host.SoundGain == 0 ? 1.0 : m_host.SoundGain), (byte)(SoundFlags.Queue | SoundFlags.SyncMaster));
+                        sp.ControllingClient.SendPlayAttachedSound(part.Sound, part.UUID, part.OwnerID, (float)part.SoundGain, (byte)(SoundFlags.Queue | SoundFlags.Loop | SoundFlags.SyncSlave));
+                    }
+                    //if (part.Sound != UUID.Zero)
+                    //    part.SendSound(part.Sound.ToString(), part.SoundGain, false, (int)(SoundFlags.Loop | SoundFlags.Queue), (float)part.SoundRadius);
+                }
+            }
+            else
+                m_host.SendSound(KeyOrName(sound, AssetType.Sound, true).ToString(), volume, false, 0, 0);
         }
 
         public void llTriggerSound(string sound, double volume)
@@ -2769,7 +2773,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID)) return;
 
             // send the sound, once, to all clients in range
-            m_host.SendSound(KeyOrName(sound, true).ToString(), volume, true, 0, 0, false, false);
+            m_host.SendSound(KeyOrName(sound, AssetType.Sound, true).ToString(), volume, true, 0, 0);
         }
 
         // Xantor 20080528: Clear prim data of sound instead
@@ -2777,34 +2781,42 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
         {
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID)) return;
 
-            if (m_host.ParentEntity.LoopSoundSlavePrims.Contains(m_host))
+            m_host.AdjustSoundGain(0);
+            lock (m_host.ParentEntity.LoopSoundSlavePrims)
             {
-                if (m_host.ParentEntity.LoopSoundMasterPrim == m_host)
+                if (m_host.ParentEntity.LoopSoundMasterPrim == m_host.UUID)
                 {
-                    foreach (ISceneChildEntity part in m_host.ParentEntity.LoopSoundSlavePrims)
+                    foreach (UUID child in m_host.ParentEntity.LoopSoundSlavePrims)
                     {
+                        ISceneChildEntity part = m_host.ParentEntity.GetChildPart(child);
+                        if (part == null)
+                            continue;
                         part.Sound = UUID.Zero;
                         part.SoundGain = 0;
-                        part.SoundFlags = (byte) SoundFlags.None;
+                        part.SoundFlags = (byte)SoundFlags.None;
+                        part.AdjustSoundGain(0);
                         part.ScheduleUpdate(PrimUpdateFlags.FindBest);
                     }
-                    m_host.ParentEntity.LoopSoundMasterPrim = null;
+                    m_host.ParentEntity.LoopSoundMasterPrim = UUID.Zero;
                     m_host.ParentEntity.LoopSoundSlavePrims.Clear();
                 }
                 else
                 {
-                    m_host.Sound = UUID.Zero;
-                    m_host.SoundGain = 0;
-                    m_host.SoundFlags = (byte) SoundFlags.None;
-                    m_host.ScheduleUpdate(PrimUpdateFlags.FindBest);
+                    if (m_host.ParentEntity.LoopSoundSlavePrims.Contains(m_host.UUID))
+                    {
+                        m_host.Sound = UUID.Zero;
+                        m_host.SoundGain = 0;
+                        m_host.SoundFlags = (byte)SoundFlags.None;
+                        m_host.ScheduleUpdate(PrimUpdateFlags.FindBest);
+                    }
+                    else
+                    {
+                        m_host.Sound = UUID.Zero;
+                        m_host.SoundGain = 0;
+                        m_host.SoundFlags = (byte)SoundFlags.Stop | (byte)SoundFlags.None;
+                        m_host.ScheduleUpdate(PrimUpdateFlags.FindBest);
+                    }
                 }
-            }
-            else
-            {
-                m_host.Sound = UUID.Zero;
-                m_host.SoundGain = 0;
-                m_host.SoundFlags = (byte) SoundFlags.Stop | (byte) SoundFlags.None;
-                m_host.ScheduleUpdate(PrimUpdateFlags.FindBest);
             }
         }
 
@@ -4067,27 +4079,28 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
             GridInstantMessage msg = new GridInstantMessage
                                          {
-                                             fromAgentID = m_host.UUID,
-                                             toAgentID = UUID.Parse(user),
-                                             imSessionID = friendTransactionID,
-                                             fromAgentName = m_host.Name
+                                             FromAgentID = m_host.UUID,
+                                             ToAgentID = UUID.Parse(user),
+                                             SessionID = friendTransactionID,
+                                             FromAgentName = m_host.Name,
+                                             RegionID = m_host.ParentEntity.Scene.RegionInfo.RegionID
                                          };
 
             // This is the item we're mucking with here
 
             // Cap the message length at 1024.
             if (message != null && message.Length > 1024)
-                msg.message = message.Substring(0, 1024);
+                msg.Message = message.Substring(0, 1024);
             else
-                msg.message = message;
+                msg.Message = message;
 
-            msg.dialog = (byte) InstantMessageDialog.MessageFromObject;
-            msg.fromGroup = false;
-            msg.offline = 0;
+            msg.Dialog = (byte) InstantMessageDialog.MessageFromObject;
+            msg.FromGroup = false;
+            msg.Offline = 0;
             msg.ParentEstateID = 0;
             msg.Position = m_host.AbsolutePosition;
             msg.RegionID = World.RegionInfo.RegionID;
-            msg.binaryBucket
+            msg.BinaryBucket
                 = Util.StringToBytes256(
                     "{0}/{1}/{2}/{3}",
                     World.RegionInfo.RegionName,
@@ -4258,22 +4271,17 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                 if (presence != null)
                 {
                     // Do NOT try to parse UUID, animations cannot be triggered by ID
-                    UUID animID = InventoryKey(anim, (int) AssetType.Animation);
+                    UUID animID = KeyOrName(anim, AssetType.Animation, false);
                     if (animID == UUID.Zero)
                     {
-                        if (UUID.TryParse(anim, out animID))
-                            presence.Animator.AddAnimation(animID, m_host.UUID);
-                        else
+                        bool RetVal = presence.Animator.AddAnimation(anim, m_host.UUID);
+                        if (!RetVal)
                         {
-                            bool RetVal = presence.Animator.AddAnimation(anim, m_host.UUID);
-                            if (!RetVal)
-                            {
-                                IChatModule chatModule = World.RequestModuleInterface<IChatModule>();
-                                if (chatModule != null)
-                                    chatModule.SimChat("Could not find animation '" + anim + "'.",
-                                                       ChatTypeEnum.DebugChannel, 2147483647, m_host.AbsolutePosition,
-                                                       m_host.Name, m_host.UUID, false, World);
-                            }
+                            IChatModule chatModule = World.RequestModuleInterface<IChatModule>();
+                            if (chatModule != null)
+                                chatModule.SimChat("Could not find animation '" + anim + "'.",
+                                                    ChatTypeEnum.DebugChannel, 2147483647, m_host.AbsolutePosition,
+                                                    m_host.Name, m_host.UUID, false, World);
                         }
                     }
                     else
@@ -4309,7 +4317,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
                 if (!UUID.TryParse(anim, out animID))
                 {
-                    animID = InventoryKey(anim, false);
+                    animID = InventoryKey(anim, AssetType.Animation, false);
                 }
 
                 IScenePresence presence = World.GetScenePresence(item.PermsGranter);
@@ -4989,16 +4997,22 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                 byte[] objBytes = agentItem.ID.GetBytes();
                 Array.Copy(objBytes, 0, bucket, 1, 16);
 
-                GridInstantMessage msg = new GridInstantMessage(World,
-                                                                m_host.UUID, m_host.Name + ", an object owned by " +
-                                                                             resolveName(m_host.OwnerID) + ",", destId,
-                                                                (byte) InstantMessageDialog.InventoryOffered,
-                                                                false,
-                                                                objName + "'\n'" + m_host.Name + "' is located at " +
-                                                                m_host.AbsolutePosition.ToString() + " in '" +
-                                                                World.RegionInfo.RegionName,
-                                                                agentItem.ID, true, m_host.AbsolutePosition,
-                                                                bucket);
+                GridInstantMessage msg = new GridInstantMessage()
+                    {
+                        FromAgentID = m_host.UUID,
+                        FromAgentName = m_host.Name + ", an object owned by " +
+                                                                              resolveName(m_host.OwnerID) + ",",
+                        ToAgentID = destId,
+                        Dialog = (byte)InstantMessageDialog.InventoryOffered,
+                        Message = objName + "'\n'" + m_host.Name + "' is located at " +
+                                                                 m_host.AbsolutePosition.ToString() + " in '" +
+                                                                 World.RegionInfo.RegionName,
+                        SessionID = agentItem.ID,
+                        Offline = 1,
+                        Position = m_host.AbsolutePosition,
+                        BinaryBucket = bucket,
+                        RegionID = m_host.ParentEntity.Scene.RegionInfo.RegionID
+                    };
 
                 if (m_TransferModule != null)
                     m_TransferModule.SendInstantMessage(msg);
@@ -5276,23 +5290,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
         {
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID)) return;
 
-            UUID soundId = UUID.Zero;
-            if (!UUID.TryParse(impact_sound, out soundId))
-            {
-                lock (m_host.TaskInventory)
-                {
-                    foreach (TaskInventoryItem item in m_host.TaskInventory.Values)
-                    {
-                        if (item.Type == (int) AssetType.Sound && item.Name == impact_sound)
-                        {
-                            soundId = item.AssetID;
-                            break;
-                        }
-                    }
-                }
-            }
-            //We do allow UUID.Zero here for scripts that want to disable the collision sound (such as "")
-            m_host.CollisionSound = soundId;
+            m_host.CollisionSound = KeyOrName(impact_sound, AssetType.Sound, true);
             m_host.CollisionSoundVolume = (float) impact_volume;
         }
 
@@ -6838,7 +6836,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             double radius1 = (float) llVecDist(llGetPos(), top_north_east);
             double radius2 = (float) llVecDist(llGetPos(), bottom_south_west);
             double radius = Math.Abs(radius1 - radius2);
-            m_host.SendSound(KeyOrName(sound, true).ToString(), volume, true, 0, (float) radius, false, false);
+            m_host.SendSound(KeyOrName(sound, AssetType.Sound, true).ToString(), volume, true, 0, (float)radius);
         }
 
         public DateTime llEjectFromLand(string pest)
@@ -7385,7 +7383,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
                         else if (rule == (int) ScriptBaseClass.PSYS_SRC_TEXTURE)
                         {
-                            prules.Texture = KeyOrName(rules.GetLSLStringItem(i + 1), false);
+                            prules.Texture = KeyOrName(rules.GetLSLStringItem(i + 1), AssetType.Texture, false);
                         }
 
                         else if (rule == (int) ScriptBaseClass.PSYS_SRC_BURST_RATE)
@@ -7540,16 +7538,23 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             bucket[0] = (byte) AssetType.Folder;
             byte[] objBytes = folderID.GetBytes();
             Array.Copy(objBytes, 0, bucket, 1, 16);
-
-            GridInstantMessage msg = new GridInstantMessage(World,
-                                                            m_host.UUID, m_host.Name + ", an object owned by " +
-                                                                         resolveName(m_host.OwnerID) + ",", destID,
-                                                            (byte) InstantMessageDialog.InventoryOffered,
-                                                            false, category + "\n" + m_host.Name + " is located at " +
+            
+            GridInstantMessage msg = new GridInstantMessage()
+                {
+                    FromAgentID = m_host.UUID,
+                    FromAgentName = m_host.Name + ", an object owned by " +
+                                                                         resolveName(m_host.OwnerID) + ",",
+                    ToAgentID = destID,
+                    Dialog = (byte)InstantMessageDialog.InventoryOffered,
+                    Message = category + "\n" + m_host.Name + " is located at " +
                                                                    World.RegionInfo.RegionName + " " +
                                                                    m_host.AbsolutePosition.ToString(),
-                                                            folderID, true, m_host.AbsolutePosition,
-                                                            bucket);
+                    SessionID = folderID,
+                    Offline = 1,
+                    Position = m_host.AbsolutePosition,
+                    BinaryBucket = bucket,
+                    RegionID = m_host.ParentEntity.Scene.RegionInfo.RegionID
+                };
 
             if (m_TransferModule != null)
                 m_TransferModule.SendInstantMessage(msg);
@@ -8314,12 +8319,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
         protected void SetPrimitiveShapeParams(ISceneChildEntity part, string map, int type)
         {
             ObjectShapePacket.ObjectDataBlock shapeBlock = new ObjectShapePacket.ObjectDataBlock();
-            UUID sculptId;
-
-            if (!UUID.TryParse(map, out sculptId))
-            {
-                sculptId = InventoryKey(map, (int) AssetType.Texture);
-            }
+            UUID sculptId = KeyOrName(map, AssetType.Texture, true);
 
             if (sculptId == UUID.Zero)
                 return;
@@ -12035,9 +12035,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                     else if ((LSL_Integer) o == ScriptBaseClass.PARCEL_DETAILS_AREA)
                         ret.Add(new LSL_Integer(land.Area));
                     else if ((LSL_Integer) o == ScriptBaseClass.PARCEL_DETAILS_ID)
-                        //Returning the InfoUUID so that we can use this for landmarks outside of this region
-                        // http://wiki.secondlife.com/wiki/PARCEL_DETAILS_ID
-                        ret.Add(new LSL_Key(land.InfoUUID.ToString()));
+                        ret.Add(new LSL_Key(land.GlobalID.ToString()));
                     else if ((LSL_Integer) o == ScriptBaseClass.PARCEL_DETAILS_PRIVACY)
                         ret.Add(new LSL_Integer(land.Private ? 1 : 0));
                     else
@@ -12726,7 +12724,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
             contacts.Sort(delegate(ContactResult a, ContactResult b)
             {
-                return (int)(a.Depth - b.Depth);
+                return a.Depth.CompareTo(b.Depth);
             });
 
             return contacts[0];
@@ -13034,7 +13032,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                     dataType == KeyframeAnimation.Data.Translation)
                 {
                     LSL_Vector pos = keyframes.GetVector3Item(i);
-                    positions.Add(m_host.AbsolutePosition + pos.ToVector3());
+                    positions.Add(pos.ToVector3());
                 }
                 if (dataType == KeyframeAnimation.Data.Both ||
                     dataType == KeyframeAnimation.Data.Rotation)

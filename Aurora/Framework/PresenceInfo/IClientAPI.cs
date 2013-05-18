@@ -224,6 +224,8 @@ namespace Aurora.Framework.PresenceInfo
     public delegate void ParcelReturnObjectsRequest(
         int local_id, uint return_type, UUID[] agent_ids, UUID[] selected_ids, IClientAPI remote_client);
 
+    public delegate void VelocityInterpolateChangeRequest(bool enable, IClientAPI client);
+
     public delegate void ParcelDeedToGroup(int local_id, UUID group_id, IClientAPI remote_client);
 
     public delegate void EstateOwnerMessageRequest(
@@ -1072,6 +1074,7 @@ namespace Aurora.Framework.PresenceInfo
         event ParcelReclaim OnParcelReclaim;
         event ParcelReturnObjectsRequest OnParcelReturnObjectsRequest;
         event ParcelReturnObjectsRequest OnParcelDisableObjectsRequest;
+        event VelocityInterpolateChangeRequest OnVelocityInterpolateChangeRequest;
         event ParcelDeedToGroup OnParcelDeedToGroup;
         event RegionInfoRequest OnRegionInfoRequest;
         event EstateCovenantRequest OnEstateCovenantRequest;
@@ -1213,9 +1216,14 @@ namespace Aurora.Framework.PresenceInfo
         event AgentCachedTextureRequest OnAgentCachedTextureRequest;
 
         /// <summary>
-        ///     Set the debug level at which packet output should be printed to console.
+        /// Set the debug level at which packet output should be printed to console.
         /// </summary>
         void SetDebugPacketLevel(int newDebug);
+
+        /// <summary>
+        /// Set a packet that should be printed to console.
+        /// </summary>
+        void SetDebugPacketName(string packetName, bool remove);
 
         void ProcessInPacket(Packet NewPack);
         void Close(bool forceClose);

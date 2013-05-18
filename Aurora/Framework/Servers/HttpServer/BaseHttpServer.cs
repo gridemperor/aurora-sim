@@ -297,6 +297,8 @@ namespace Aurora.Framework.Servers.HttpServer
 
                 if (TryGetPollServiceHTTPHandler(context.Request.Url.AbsolutePath, out psEvArgs))
                 {
+                    if (context.Request.HttpMethod == "HEAD")
+                        return;
                     PollServiceHttpRequest psreq = new PollServiceHttpRequest(psEvArgs, context);
 
                     if (psEvArgs.Request != null)
@@ -375,6 +377,7 @@ namespace Aurora.Framework.Servers.HttpServer
                         if (request.ProtocolVersion.Minor == 0)
                         {
                             //HTTP 1.0... no chunking
+                            response.ContentLength64 = buffer.Length;
                             using (Stream stream = response.OutputStream)
                             {
                                 HttpServerHandlerHelpers.WriteNonChunked(stream, buffer);
@@ -396,8 +399,11 @@ namespace Aurora.Framework.Servers.HttpServer
                 }
                 catch(Exception ex)
                 {
-                    MainConsole.Instance.WarnFormat(
-                        "[BASE HTTP SERVER]: HandleRequest failed to write all data to the stream: {0}", ex.ToString());
+                    if (!(ex is HttpListenerException && (ex as HttpListenerException).ErrorCode == 64))
+                    {
+                        MainConsole.Instance.WarnFormat(
+                            "[BASE HTTP SERVER]: HandleRequest failed to write all data to the stream: {0}", ex.ToString());
+                    }
                     response.Abort();
                 }
 

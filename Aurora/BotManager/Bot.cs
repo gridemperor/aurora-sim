@@ -201,17 +201,17 @@ namespace Aurora.BotManager
 
         public void SendInstantMessage(GridInstantMessage im)
         {
-            if (im.dialog == (byte) InstantMessageDialog.GodLikeRequestTeleport ||
-                im.dialog == (byte) InstantMessageDialog.RequestTeleport)
+            if (im.Dialog == (byte) InstantMessageDialog.GodLikeRequestTeleport ||
+                im.Dialog == (byte) InstantMessageDialog.RequestTeleport)
             {
-                if (m_bot.AvatarCreatorID == im.fromAgentID || m_scenePresence.Scene.Permissions.IsGod(im.fromAgentID))
+                if (m_bot.AvatarCreatorID == im.FromAgentID || m_scenePresence.Scene.Permissions.IsGod(im.FromAgentID))
                 {
                     ulong handle = 0;
                     uint x = 128;
                     uint y = 128;
                     uint z = 70;
 
-                    Util.ParseFakeParcelID(im.imSessionID, out handle, out x, out y, out z);
+                    Util.ParseFakeParcelID(im.SessionID, out handle, out x, out y, out z);
                     m_scenePresence.Teleport(new Vector3(x, y, z));
                 }
             }
@@ -1651,6 +1651,7 @@ namespace Aurora.BotManager
         public event DeGrabObject OnDeGrabObject;
         public event MoveObject OnGrabUpdate;
         public event ViewerEffectEventHandler OnViewerEffect;
+        public event VelocityInterpolateChangeRequest OnVelocityInterpolateChangeRequest;
 
         public event FetchInventory OnAgentDataUpdateRequest;
         public event TeleportLocationRequest OnSetStartLocationRequest;
@@ -1954,6 +1955,10 @@ namespace Aurora.BotManager
         }
 
         public void SetDebugPacketLevel(int newDebug)
+        {
+        }
+
+        public void SetDebugPacketName(string packetName, bool remove)
         {
         }
 

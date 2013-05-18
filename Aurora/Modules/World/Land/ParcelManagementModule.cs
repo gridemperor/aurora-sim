@@ -341,31 +341,31 @@ namespace Aurora.Modules.Land
 
                         GridInstantMessage msg = new GridInstantMessage
                                                      {
-                                                         fromAgentID = UUID.Zero,
-                                                         toAgentID = ret.Key,
-                                                         imSessionID = transaction,
-                                                         timestamp = (uint) Util.UnixTimeSinceEpoch(),
-                                                         fromAgentName = "Server",
-                                                         dialog = 19,
-                                                         fromGroup = false,
-                                                         offline = 1,
+                                                         FromAgentID = UUID.Zero,
+                                                         ToAgentID = ret.Key,
+                                                         SessionID = transaction,
+                                                         Timestamp = (uint) Util.UnixTimeSinceEpoch(),
+                                                         FromAgentName = "Server",
+                                                         Dialog = 19,
+                                                         FromGroup = false,
+                                                         Offline = 1,
                                                          ParentEstateID =
                                                              m_scene.RegionInfo.EstateSettings.ParentEstateID,
                                                          Position = Vector3.Zero,
                                                          RegionID = m_scene.RegionInfo.RegionID,
-                                                         binaryBucket = Util.StringToBytes256("\0")
+                                                         BinaryBucket = Util.StringToBytes256("\0")
                                                      };
                         // From server
                         // Object msg
                         // We must fill in a null-terminated 'empty' string here since bytes[0] will crash viewer 3.
 
                         if (ret.Value.count > 1)
-                            msg.message =
+                            msg.Message =
                                 string.Format("Your {0} objects were returned from {1} in region {2} due to {3}",
                                               ret.Value.count, ret.Value.location.ToString(),
                                               m_scene.RegionInfo.RegionName, ret.Value.reason);
                         else
-                            msg.message = string.Format(
+                            msg.Message = string.Format(
                                 "Your object {0} was returned from {1} in region {2} due to {3}", ret.Value.objectName,
                                 ret.Value.location.ToString(), m_scene.RegionInfo.RegionName, ret.Value.reason);
 
@@ -534,7 +534,6 @@ namespace Aurora.Modules.Land
             MainConsole.Instance.Info("[ParcelManagement]: No land found for region " + m_scene.RegionInfo.RegionName +
                                       ", setting owner to " + fullSimParcel.LandData.OwnerID);
             fullSimParcel.LandData.ClaimDate = Util.UnixTimeSinceEpoch();
-            fullSimParcel.SetInfoID();
             fullSimParcel.LandData.Bitmap =
                 new byte[(m_scene.RegionInfo.RegionSizeX/4)*(m_scene.RegionInfo.RegionSizeY/4)/8];
             fullSimParcel = AddLandObject(fullSimParcel);
@@ -1086,7 +1085,6 @@ namespace Aurora.Modules.Land
             //Now add the new land object
             ILandObject result = AddLandObject(newLand);
             ModifyLandBitmapSquare(start_x, start_y, end_x, end_y, result.LandData.LocalID);
-            result.SetInfoID();
             //Fix the old land object as well
             UpdateLandObject(startLandObject);
             result.SendLandUpdateToAvatarsOverMe();
@@ -1151,6 +1149,10 @@ namespace Aurora.Modules.Land
 
         private void UpdateParcelBitmap(ILandObject lo)
         {
+            int size = (m_scene.RegionInfo.RegionSizeX / 4) * (m_scene.RegionInfo.RegionSizeY / 4) / 8;
+            if (lo.LandData.Bitmap.Length != size)
+                lo.LandData.Bitmap = new byte[size];
+
             int y, x, i = 0, byteNum = 0;
             byte tempByte = 0;
             for (y = 0; y < m_scene.RegionInfo.RegionSizeY/4; y++)
@@ -1704,12 +1706,56 @@ namespace Aurora.Modules.Land
                     //Merge it into the large parcel if possible
                 {
                     new_land.ForceUpdateLandInfo();
-                    new_land.SetInfoID();
                     AddLandObject(new_land, true);
                 }
             }
             if (AllParcels().Count == 0) //Serious fallback
                 ResetSimLandObjects();
+        }
+
+        public void IncomingLandDataFromOAR(List<LandData> data, bool merge, Vector2 parcelOffset)
+        {
+            if (!merge || data.Count == 0) //Serious fallback
+                ResetSimLandObjects();
+            foreach (LandData t in data)
+            {
+                int oldRegionSize = (int)Math.Sqrt(t.Bitmap.Length * 8);
+                int offset_x = (int)(parcelOffset.X > 0 ? (parcelOffset.X / 4f) : 0),
+                    offset_y = (int)(parcelOffset.Y > 0 ? (parcelOffset.Y / 4f) : 0),
+                    i = 0, bitNum = 0;
+                byte tempByte;
+                lock (m_landListLock)
+                {
+                    //Update the localID
+                    t.LocalID = ++m_lastLandLocalID;
+                }
+                int x = 0, y = 0;
+                for (i = 0; i < t.Bitmap.Length; i++)
+                {
+                    tempByte = t.Bitmap[i];
+                    for (bitNum = 0; bitNum < 8; bitNum++)
+                    {
+                        bool bit = Convert.ToBoolean(Convert.ToByte(tempByte >> bitNum) & (byte)1);
+                        if (bit)
+                            m_landIDList[offset_x + x, offset_y + y] = t.LocalID;
+                        x++;
+                        if (x > oldRegionSize - 1)
+                        {
+                            x = 0;
+                            y++;
+                        }
+                    }
+                }
+                ILandObject new_land = new LandObject(t.OwnerID, t.IsGroupOwned, m_scene);
+                new_land.LandData = t;
+                new_land.ForceUpdateLandInfo();
+                lock (m_landListLock)
+                {
+                    m_lastLandLocalID -= 1;
+                }
+                AddLandObject(new_land);
+            }
+            UpdateAllParcelBitmaps();
         }
 
         private bool SetLandBitmapFromByteArray(ILandObject parcel, bool forceSet, Vector2 offsetOfParcel)
@@ -1905,22 +1951,6 @@ namespace Aurora.Modules.Land
             return OSDParser.SerializeLLSDXmlBytes(new OSDMap());
         }
 
-        // We create the InfoUUID by using the regionHandle (64 bit), and the local (integer) x
-        // and y coordinate (each 8 bit), encoded in a UUID (128 bit).
-        //
-        // Request format:
-        // <llsd>
-        //   <map>
-        //     <key>location</key>
-        //     <array>
-        //       <real>1.23</real>
-        //       <real>45..6</real>
-        //       <real>78.9</real>
-        //     </array>
-        //     <key>region_id</key>
-        //     <uuid>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</uuid>
-        //   </map>
-        // </llsd>
         private byte[] RemoteParcelRequest(Stream request, UUID agentID)
         {
             UUID parcelID = UUID.Zero;
@@ -1938,19 +1968,27 @@ namespace Aurora.Modules.Land
                         // if you do a "About Landmark" on a landmark a second time, the viewer sends the
                         // region_handle it got earlier via RegionHandleRequest
                         ulong regionHandle = map["region_handle"].AsULong();
-                        parcelID = Util.BuildFakeParcelID(regionHandle, x, y);
-                    }
-                    else if (regionID == m_scene.RegionInfo.RegionID)
-                    {
-                        // a parcel request for a local parcel => no need to query the grid
-                        parcelID = Util.BuildFakeParcelID(m_scene.RegionInfo.RegionHandle, x, y);
-                    }
-                    else
-                    {
-                        // a parcel request for a parcel in another region. Ask the grid about the region
-                        GridRegion info = m_scene.GridService.GetRegionByUUID(null, regionID);
+                        int regX, regY;
+                        Util.UlongToInts(regionHandle, out regX, out regY);
+                        GridRegion info = m_scene.GridService.GetRegionByPosition(null, regX, regY);
                         if (info != null)
-                            parcelID = Util.BuildFakeParcelID(info.RegionHandle, x, y);
+                            regionID = info.RegionID;
+                    }
+                    if (regionID == m_scene.RegionInfo.RegionID)
+                    {
+                        ILandObject parcel = GetLandObject(x, y);
+                        if (parcel != null)
+                            parcelID = parcel.LandData.GlobalID;
+                    }
+                    if(parcelID == UUID.Zero)
+                    {
+                        IDirectoryServiceConnector DSC = Framework.Utilities.DataManager.RequestPlugin<IDirectoryServiceConnector>();
+                        if (DSC != null)
+                        {
+                            LandData data = DSC.GetParcelInfo(regionID, (int)x, (int)y);
+                            if (data != null)
+                                parcelID = data.GlobalID;
+                        }
                     }
                 }
             }
@@ -2319,12 +2357,6 @@ namespace Aurora.Modules.Land
         {
             if (parcelID == UUID.Zero)
                 return;
-            ulong RegionHandle = 0;
-            uint X, Y, Z;
-            Util.ParseFakeParcelID(parcelID, out RegionHandle,
-                                   out X, out Y, out Z);
-            MainConsole.Instance.DebugFormat("[LAND] got parcelinfo request for regionHandle {0}, x/y {1}/{2}",
-                                             RegionHandle, X, Y);
             IDirectoryServiceConnector DSC = Framework.Utilities.DataManager.RequestPlugin<IDirectoryServiceConnector>();
             if (DSC != null)
             {
@@ -2333,29 +2365,23 @@ namespace Aurora.Modules.Land
                 if (data != null) // if we found some data, send it
                 {
                     GridRegion info;
-                    int RegionX, RegionY;
-                    Util.UlongToInts(RegionHandle, out RegionX, out RegionY);
-                    RegionX = (int) ((float) RegionX/Constants.RegionSize)*Constants.RegionSize;
-                    RegionY = (RegionY/Constants.RegionSize)*Constants.RegionSize;
-                    if (RegionX == m_scene.RegionInfo.RegionLocX &&
-                        RegionY == m_scene.RegionInfo.RegionLocY)
+                    if (data.RegionID == m_scene.RegionInfo.RegionID)
                     {
                         info = new GridRegion(m_scene.RegionInfo);
                     }
                     else
                     {
                         // most likely still cached from building the extLandData entry
-                        info = m_scene.GridService.GetRegionByPosition(null, RegionX, RegionY);
+                        info = m_scene.GridService.GetRegionByUUID(null, data.RegionID);
                     }
                     if (info == null)
                     {
                         MainConsole.Instance.WarnFormat("[LAND]: Failed to find region having parcel {0} @ {1} {2}",
-                                                        parcelID, X, Y);
+                                                        parcelID);
                         return;
                     }
-                    // we need to transfer the fake parcelID, not the one in landData, so the viewer can match it to the landmark.
                     MainConsole.Instance.DebugFormat("[LAND] got parcelinfo for parcel {0} in region {1}; sending...",
-                                                     data.Name, RegionHandle);
+                                                     data.Name, data.RegionHandle);
                     remoteClient.SendParcelInfo(data, parcelID, (uint) (info.RegionLocX + data.UserLocation.X),
                                                 (uint) (info.RegionLocY + data.UserLocation.Y), info.RegionName);
                 }
