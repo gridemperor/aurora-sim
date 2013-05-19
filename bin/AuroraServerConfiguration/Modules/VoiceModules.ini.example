@@ -18,7 +18,7 @@
     ;; positional voice, and high quality audio codec. Host voice on the
     ;; same server, or use Glacier2 to proxy the insecure ICE protocol.
 	;; Must be downloaded and compile from https://github.com/aurora-sim/whisper_server
-    ;Module = MurmurVoice;
+    ;Module = MurmurVoice
 	
 [VivoxVoice]
     ; The VivoxVoice module will allow you to provide voice on your

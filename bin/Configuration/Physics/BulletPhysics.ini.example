@@ -42,7 +42,8 @@
     CollisionMargin = 0.04
 
     ; Linkset implementation
-    LinksetImplementation = 3      ; 0=constraint, 1=compound, 3=groupcompound
+	; 0=constraint, 1=compound, 3=groupcompound
+    LinksetImplementation = 3
 
     ; Whether to mesh sculpties
     MeshSculptedPrim = true

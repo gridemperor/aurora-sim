@@ -50,7 +50,7 @@
     ;; Ex.  ViewersToAllow = "Astra"
     ;; See http://phoenixviewer.com/app/client_list.xml for a full list of clients
     ;; Default is ""
-    ViewersToAllow = "";
+    ViewersToAllow = ""
 
     ;; If UseAllowListInsteadOfBanList is not used, add all banned viewers here
     ;; Other viewers to ban from your sims.

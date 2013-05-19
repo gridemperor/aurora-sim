@@ -109,7 +109,7 @@
     ;; Note: leave blank to save in the /bin folder
     ;; Note: this must end with / if not blank
     ;; Default is "" which is the bin folder
-    DirectoryToSaveOARs = "";
+    DirectoryToSaveOARs = ""
 
 [CombatModule]
     ;; Combat Module Settings
@@ -204,7 +204,7 @@
     AllowForcefulBans = true
 
     ;; Should dwell on parcels be kept track of?
-    UseDwell = true;
+    UseDwell = true
 	
 	;; The default owner of parcels (Leave blank to have the user be no one)
 	;GodParcelOwner = 
