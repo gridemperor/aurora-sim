@@ -111,10 +111,10 @@
     ;; ##
     
     ;; Is this enabled?
-    Use_Flight_Ceiling_Height_Max = false
+    Use_Flight_Ceiling_Height_Max = false;
 
     ;; Max height in meters
-    Flight_Ceiling_Height_Max = 4096
+    Flight_Ceiling_Height_Max = 4096;
 
     ;; ##
     ;; ## Advanced Settings
@@ -156,10 +156,10 @@
     ;; See http://en.wikipedia.org/wiki/PID_controller
 
     av_pid_derivative_linux = 2200.0
-    av_pid_proportional_linux = 900.0
+    av_pid_proportional_linux = 900.0;
 
     av_pid_derivative_win = 2200.0
-    av_pid_proportional_win = 900.0
+    av_pid_proportional_win = 900.0;
 
     ;; girth of the avatar.  Adds radius to the height also
     av_capsule_radius = 0.37

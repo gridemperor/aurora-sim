@@ -1,7 +1,7 @@
 [PacketPool]
     ;; Enables the experimental packet pool. Yes, we've been here before.
-    RecyclePackets = true
-    RecycleDataBlocks = false
+    RecyclePackets = true;
+    RecycleDataBlocks = false;
 
 [InterestManagement]
     ;; This section controls how updates for prims and avatars are sent to the client
@@ -9,19 +9,14 @@
     ;; Should we only send the updates that clients can see (based on their draw distance)?
     ;; EXTREMELY NOT RECOMMENDED to disable!
     ;; Default: true
-    UseCulling = true
+    UseCulling = true;
     
     ;; Culling based on distance
     ;; Default: true
-    UseDistanceBasedCulling = true
+    UseDistanceBasedCulling = true;
 	
     ;; Distance child agent cameras have to move before updates are re-prioritized
     ChildReprioritizationDistance = 20.0
-
-[ObjectCache]
-    ;; This helps reduce bandwidth by sending cached updates to the client
-    ;; Default: ObjectCacheModule
-    Module = ObjectCacheModule
 
 [ClientStack.LindenUDP]
     ;; Allow UDP packets to be used for inventory
@@ -111,7 +106,7 @@
 
     ;; Use the J2K cache to store decoded textures
     ;; NOT RECOMMENDED TO DISABLE
-    UseJ2KCache = true
+    UseJ2KCache = true;
 
 [System]
     ;; Sets the method that OpenSim will use to fire asynchronous events. Valid values are:
@@ -130,13 +125,3 @@
     ;; Dual Core, 30
     ;; Quad Core, 45
     MaxPoolThreads = 30
-
-[SSLConfig]
-    ;; ssl config: Experimental!
-    ;; The auto https config only really works definitely on windows XP now.
-    ;;You need a Cert Request/Signed pair installed in the MY store with the CN specified below.
-    ;;You can use https on other platforms, but you'll need to configure the httpapi yourself for now.
-    http_listener_ssl = false ; Also create a SSL server
-    http_listener_cn = localhost ; Use the cert with the common name
-    http_listener_sslport = 9001 ; Use this port for SSL connections
-    http_listener_ssl_cert = "" ; Currently unused, but will be used for OSHttpServer

@@ -42,12 +42,12 @@ using Aurora.Framework.Services.ClassHelpers.Assets;
 using Aurora.Framework.Services.ClassHelpers.Inventory;
 using Aurora.Framework.Services.ClassHelpers.Profile;
 using Aurora.Framework.Utilities;
-using Aurora.ScriptEngine.AuroraDotNetEngine.APIs.Interfaces;
 using Aurora.ScriptEngine.AuroraDotNetEngine.Plugins;
 using Aurora.ScriptEngine.AuroraDotNetEngine.Runtime;
 using Nini.Config;
 using OpenMetaverse;
 using OpenMetaverse.Packets;
+using OpenMetaverse.StructuredData;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -72,7 +72,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
     /// <summary>
     ///     Contains all LSL ll-functions. This class will be in Default AppDomain.
     /// </summary>
-    public class LSL_Api : MarshalByRefObject, ILSL_Api, IScriptApi
+    public class LSL_Api : MarshalByRefObject, IScriptApi
     {
         protected IScriptModulePlugin m_ScriptEngine;
         protected ISceneChildEntity m_host;
@@ -10382,6 +10382,12 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                 return "Aurora-Sim Server";
             if (name == "sim_version")
                 return World.RequestModuleInterface<ISimulationBase>().Version;
+            if (name == "frame_number")
+                return new LSL_String(World.Frame.ToString());
+            if (name == "region_idle")
+                return new LSL_String("1");
+            if (name == "dynamic_pathfinding")
+                return new LSL_String("disabled");
             return "";
         }
 
@@ -12972,7 +12978,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
         {
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID))
                 return LSL_Integer.FALSE;
-            if (World.Permissions.IsAdministrator(m_host.OwnerID))
+            if (World.Permissions.CanIssueEstateCommand(m_host.OwnerID, false))
             {
                 if (action == ScriptBaseClass.ESTATE_ACCESS_ALLOWED_AGENT_ADD)
                     World.RegionInfo.EstateSettings.AddEstateUser(UUID.Parse(avatar));
@@ -12992,6 +12998,8 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                     World.RegionInfo.EstateSettings.RemoveBan(UUID.Parse(avatar));
                 return LSL_Integer.TRUE;
             }
+            else
+                ShoutError("llManageEstateAccess object owner must manage estate.");
             return LSL_Integer.FALSE;
         }
 
@@ -13261,6 +13269,354 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
                 if (command == ScriptBaseClass.CHARACTER_CMD_STOP)
                     controller.StopMoving(false, true);
             }
+        }
+
+        public LSL_Float llGetSimStats(LSL_Integer statType)
+        {
+            LSL_Float retVal = 0;
+            if (statType == ScriptBaseClass.SIM_STAT_PCT_CHARS_STEPPED)
+            {
+                //TODO: Not implemented
+                retVal = 0;
+            }
+            return retVal;
+        }
+
+        public void llSetAnimationOverride(LSL_String anim_state, LSL_String anim)
+        {
+            //anim_state - animation state to be overriden
+            //anim       - an animation in the prim's inventory or the name of the built-in animation
+
+            UUID invItemID = InventorySelf();
+            if (invItemID == UUID.Zero)
+                return;
+
+            TaskInventoryItem item;
+
+            lock (m_host.TaskInventory)
+            {
+                if (!m_host.TaskInventory.ContainsKey(InventorySelf()))
+                    return;
+                item = m_host.TaskInventory[InventorySelf()];
+            }
+
+            if (item.PermsGranter == UUID.Zero)
+                return;
+
+            if ((item.PermsMask & ScriptBaseClass.PERMISSION_OVERRIDE_ANIMATIONS) != 0)
+            {
+                IScenePresence presence = World.GetScenePresence(item.PermsGranter);
+
+                if (presence != null)
+                {
+                    // Do NOT try to parse UUID, animations cannot be triggered by ID
+                    UUID animID = KeyOrName(anim, AssetType.Animation, false);
+
+                    presence.Animator.SetDefaultAnimationOverride(anim_state, animID, anim);
+                }
+            }
+        }
+
+        public void llResetAnimationOverride(LSL_String anim_state)
+        {
+            //anim_state - animation state to be reset
+            
+            UUID invItemID = InventorySelf();
+            if (invItemID == UUID.Zero)
+                return;
+
+            TaskInventoryItem item;
+
+            lock (m_host.TaskInventory)
+            {
+                if (!m_host.TaskInventory.ContainsKey(InventorySelf()))
+                    return;
+                item = m_host.TaskInventory[InventorySelf()];
+            }
+
+            if (item.PermsGranter == UUID.Zero)
+                return;
+
+            if ((item.PermsMask & ScriptBaseClass.PERMISSION_OVERRIDE_ANIMATIONS) != 0)
+            {
+                IScenePresence presence = World.GetScenePresence(item.PermsGranter);
+
+                if (presence != null)
+                {
+                    presence.Animator.ResetDefaultAnimationOverride(anim_state);
+                }
+            }
+        }
+
+        public LSL_String llGetAnimationOverride(string anim_state)
+        {
+            //anim_state - animation state to be reset
+
+            UUID invItemID = InventorySelf();
+            if (invItemID == UUID.Zero)
+                return "";
+
+            TaskInventoryItem item;
+
+            lock (m_host.TaskInventory)
+            {
+                if (!m_host.TaskInventory.ContainsKey(InventorySelf()))
+                    return "";
+                item = m_host.TaskInventory[InventorySelf()];
+            }
+
+            if (item.PermsGranter == UUID.Zero)
+                return "";
+
+            if ((item.PermsMask & ScriptBaseClass.PERMISSION_TRIGGER_ANIMATION) != 0 ||
+                (item.PermsMask & ScriptBaseClass.PERMISSION_OVERRIDE_ANIMATIONS) != 0)
+            {
+                IScenePresence presence = World.GetScenePresence(item.PermsGranter);
+
+                if (presence != null)
+                {
+                    return new LSL_String(presence.Animator.GetDefaultAnimationOverride(anim_state));
+                }
+            }
+            return "";
+        }
+
+        public LSL_String llJsonGetValue(LSL_String json, LSL_List specifiers)
+        {
+            OSD o = OSDParser.DeserializeJson(json);
+            OSD specVal = JsonGetSpecific(o, specifiers, 0);
+
+            return specVal.AsString();
+        }
+
+        public LSL_List llJson2List(LSL_String json)
+        {
+            try
+            {
+                OSD o = OSDParser.DeserializeJson(json);
+                return (LSL_List)ParseJsonNode(o);
+            }
+            catch (Exception)
+            {
+                return new LSL_List(ScriptBaseClass.JSON_INVALID);
+            }
+        }
+
+        private object ParseJsonNode(OSD node)
+        {
+            if (node.Type == OSDType.Integer)
+                return new LSL_Integer(node.AsInteger());
+            if (node.Type == OSDType.Boolean)
+                return new LSL_Integer(node.AsBoolean() ? 1 : 0);
+            if (node.Type == OSDType.Real)
+                return new LSL_Float(node.AsReal());
+            if (node.Type == OSDType.UUID || node.Type == OSDType.String)
+                return new LSL_String(node.AsString());
+            if (node.Type == OSDType.Array)
+            {
+                LSL_List resp = new LSL_List();
+                OSDArray ar = node as OSDArray;
+                foreach (OSD o in ar)
+                    resp.Add(ParseJsonNode(o));
+                return resp;
+            }
+            if (node.Type == OSDType.Map)
+            {
+                LSL_List resp = new LSL_List();
+                OSDMap ar = node as OSDMap;
+                foreach (KeyValuePair<string, OSD> o in ar)
+                {
+                    resp.Add(new LSL_String(o.Key));
+                    resp.Add(ParseJsonNode(o.Value));
+                }
+                return resp;
+            }
+            throw new Exception(ScriptBaseClass.JSON_INVALID);
+        }
+
+        public LSL_String llList2Json(LSL_String type, LSL_List values)
+        {
+            try
+            {
+                if (type == ScriptBaseClass.JSON_ARRAY)
+                {
+                    OSDArray array = new OSDArray();
+                    foreach (object o in values.Data)
+                    {
+                        array.Add(ListToJson(o));
+                    }
+                    return OSDParser.SerializeJsonString(array);
+                }
+                else if (type == ScriptBaseClass.JSON_OBJECT)
+                {
+                    OSDMap map = new OSDMap();
+                    for (int i = 0; i < values.Data.Length; i += 2)
+                    {
+                        if (!(values.Data[i] is LSL_String))
+                            return ScriptBaseClass.JSON_INVALID;
+                        map.Add(((LSL_String)values.Data[i]).m_string, ListToJson(values.Data[i+1]));
+                    }
+                    return OSDParser.SerializeJsonString(map);
+                }
+                return ScriptBaseClass.JSON_INVALID;
+            }
+            catch (Exception ex)
+            {
+                return ex.Message;
+            }
+        }
+
+        private OSD ListToJson(object o)
+        {
+            if (o is LSL_Float)
+                return OSD.FromReal(((LSL_Float)o).value);
+            if (o is LSL_Integer)
+            {
+                int i = ((LSL_Integer)o).value;
+                if (i == 0)
+                    return OSD.FromBoolean(false);
+                else if (i == 1)
+                    return OSD.FromBoolean(true);
+                return OSD.FromInteger(i);
+            }
+            if (o is LSL_Rotation)
+                return OSD.FromString(((LSL_Rotation)o).ToString());
+            if (o is LSL_Vector)
+                return OSD.FromString(((LSL_Vector)o).ToString());
+            if (o is LSL_String)
+            {
+                string str = ((LSL_String)o).m_string;
+                if (str == ScriptBaseClass.JSON_NULL)
+                    return new OSD();
+                return OSD.FromString(str);
+            }
+            throw new Exception(ScriptBaseClass.JSON_INVALID);
+        }
+
+        private OSD JsonGetSpecific(OSD o, LSL_List specifiers, int i)
+        {
+            object spec = specifiers.Data[i];
+            OSD nextVal = null;
+            if (o is OSDArray)
+            {
+                if (spec is LSL_Integer)
+                    nextVal = ((OSDArray)o)[((LSL_Integer)spec).value];
+            }
+            if (o is OSDMap)
+            {
+                if (spec is LSL_String)
+                    nextVal = ((OSDMap)o)[((LSL_String)spec).m_string];
+            }
+            if (nextVal != null)
+            {
+                if (specifiers.Data.Length - 1 > i)
+                    return JsonGetSpecific(nextVal, specifiers, i + 1);
+            }
+            return nextVal;
+        }
+
+        public LSL_String llJsonSetValue(LSL_String json, LSL_List specifiers, LSL_String value)
+        {
+            try
+            {
+                OSD o = OSDParser.DeserializeJson(json);
+                JsonSetSpecific(o, specifiers, 0, value);
+                return OSDParser.SerializeJsonString(o);
+            }
+            catch (Exception)
+            {
+            }
+            return ScriptBaseClass.JSON_INVALID;
+        }
+
+        private void JsonSetSpecific(OSD o, LSL_List specifiers, int i, LSL_String val)
+        {
+            object spec = specifiers.Data[i];
+            object specNext = i+1 == specifiers.Data.Length ? null : specifiers.Data[i+1];
+            OSD nextVal = null;
+            if (o is OSDArray)
+            {
+                OSDArray array = ((OSDArray)o);
+                if (spec is LSL_Integer)
+                {
+                    int v = ((LSL_Integer)spec).value;
+                    if(v >= array.Count)
+                        array.Add(JsonBuildRestOfSpec(specifiers, i+1, val));
+                    else
+                        nextVal = ((OSDArray)o)[v];
+                }
+                else if (spec is LSL_String && ((LSL_String)spec) == ScriptBaseClass.JSON_APPEND)
+                    array.Add(JsonBuildRestOfSpec(specifiers, i+1, val));
+            }
+            if (o is OSDMap)
+            {
+                if (spec is LSL_String)
+                {
+                    OSDMap map = ((OSDMap)o);
+                    if (map.ContainsKey(((LSL_String)spec).m_string))
+                        nextVal = map[((LSL_String)spec).m_string];
+                    else
+                        map.Add(((LSL_String)spec).m_string, JsonBuildRestOfSpec(specifiers, i+1, val));
+                }
+            }
+            if (nextVal != null)
+            {
+                if (specifiers.Data.Length - 1 > i)
+                {
+                    JsonSetSpecific(nextVal, specifiers, i + 1, val);
+                    return;
+                }
+            }
+        }
+
+        private OSD JsonBuildRestOfSpec(LSL_List specifiers, int i, LSL_String val)
+        {
+            object spec =  i >= specifiers.Data.Length ? null : specifiers.Data[i];
+            object specNext = i+1 >= specifiers.Data.Length ? null : specifiers.Data[i+1];
+
+            if (spec == null)
+                return OSD.FromString(val);
+
+            if (spec is LSL_Integer || 
+                (spec is LSL_String && ((LSL_String)spec) == ScriptBaseClass.JSON_APPEND))
+            {
+                OSDArray array = new OSDArray();
+                array.Add(JsonBuildRestOfSpec(specifiers, i+1, val));
+                return array;
+            }
+            else if (spec is LSL_String)
+            {
+                OSDMap map = new OSDMap();
+                map.Add((LSL_String)spec, JsonBuildRestOfSpec(specifiers, i+1, val));
+                return map;
+            }
+            return new OSD();
+        }
+
+        public LSL_String llJsonValueType(LSL_String json, LSL_List specifiers)
+        {
+            OSD o = OSDParser.DeserializeJson(json);
+            OSD specVal = JsonGetSpecific(o, specifiers, 0);
+            if (specVal == null)
+                return ScriptBaseClass.JSON_INVALID;
+            switch (specVal.Type)
+            {
+                case OSDType.Array:
+                    return ScriptBaseClass.JSON_ARRAY;
+                case OSDType.Boolean:
+                    return specVal.AsBoolean() ? ScriptBaseClass.JSON_TRUE : ScriptBaseClass.JSON_FALSE;
+                case OSDType.Integer:
+                case OSDType.Real:
+                    return ScriptBaseClass.JSON_NUMBER;
+                case OSDType.Map:
+                    return ScriptBaseClass.JSON_OBJECT;
+                case OSDType.String:
+                case OSDType.UUID:
+                    return ScriptBaseClass.JSON_STRING;
+                case OSDType.Unknown:
+                    return ScriptBaseClass.JSON_NULL;
+            }
+            return ScriptBaseClass.JSON_INVALID;
         }
     }
 

@@ -137,7 +137,7 @@
     ;; See http://en.wikipedia.org/wiki/PID_controller
 
     av_pid_derivative = 2200.0
-    av_pid_proportional = 900.0
+    av_pid_proportional = 900.0;
 
     ;; girth of the avatar.  Adds radius to the height also
     av_capsule_radius = 0.37
