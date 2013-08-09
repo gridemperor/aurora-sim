@@ -406,6 +406,8 @@ namespace Aurora.Framework.Services
         [ProtoMember(2)]
         public GridRegion Destination;
         [ProtoMember(3)]
+        public GridRegion OldRegion;
+        [ProtoMember(4)]
         public bool IsCrossing;
 
         public override OSDMap ToOSD()
@@ -414,6 +416,7 @@ namespace Aurora.Framework.Services
             map["Method"] = "MakeChildAgentRequest";
             map["AgentID"] = AgentID;
             map["Destination"] = Destination.ToOSD();
+            map["OldRegion"] = OldRegion.ToOSD();
             map["IsCrossing"] = IsCrossing;
             return map;
         }
@@ -423,6 +426,8 @@ namespace Aurora.Framework.Services
             AgentID = map["AgentID"];
             Destination = new GridRegion();
             Destination.FromOSD((OSDMap)map["Destination"]);
+            OldRegion = new GridRegion();
+            OldRegion.FromOSD((OSDMap)map["OldRegion"]);
             IsCrossing = map["IsCrossing"];
         }
     }
@@ -538,6 +543,7 @@ namespace Aurora.Framework.Services
         public ISceneEntity Object;
         [ProtoMember(3)]
         public GridRegion Destination;
+        private byte[] ObjectBlob = null;
 
         public IScene Scene;
 
@@ -554,9 +560,18 @@ namespace Aurora.Framework.Services
         {
             Destination = new GridRegion();
             Destination.FromOSD((OSDMap)map["Destination"]);
-            System.IO.MemoryStream stream = new System.IO.MemoryStream(map["Object"].AsBinary());
+            ObjectBlob = map["Object"].AsBinary();
+        }
+
+        public void DeserializeObject()
+        {
+            if (ObjectBlob == null || Scene == null)
+                return;
+
+            System.IO.MemoryStream stream = new System.IO.MemoryStream(ObjectBlob);
             Aurora.Framework.Serialization.SceneEntitySerializer.SceneObjectSerializer.FromXml2Format(ref stream, Scene);
             stream.Close();
+            ObjectBlob = null;
         }
     }
 

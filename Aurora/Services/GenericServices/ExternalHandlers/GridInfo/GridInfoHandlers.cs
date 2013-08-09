@@ -89,7 +89,7 @@ namespace Aurora.Services
             IConfig gridCfg = m_config.Configs["GridInfoService"];
             if (gridCfg == null)
                 return;
-            _info["platform"] = "GalaxyGrid";
+            _info["platform"] = "Aurora";
             try
             {
                 IConfig configCfg = m_config.Configs["Handlers"];

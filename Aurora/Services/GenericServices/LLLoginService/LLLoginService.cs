@@ -32,6 +32,7 @@ using Aurora.Framework.DatabaseInterfaces;
 using Aurora.Framework.ModuleLoader;
 using Aurora.Framework.Modules;
 using Aurora.Framework.PresenceInfo;
+using Aurora.Framework.SceneInfo;
 using Aurora.Framework.Services;
 using Aurora.Framework.Services.ClassHelpers.Inventory;
 using Aurora.Framework.Services.ClassHelpers.Profile;
@@ -375,7 +376,7 @@ namespace Aurora.Services
                 {
                     MainConsole.Instance.InfoFormat(
                         "[LLOGIN SERVICE]: Login failed for user {1}, reason: {0}",
-                        data.ToString(), account.Name);
+                        (data != null ? data.ToString() : (response is LLFailedLoginResponse) ? (response as LLFailedLoginResponse).Value : "Unknown"), account.Name);
                     return response;
                 }
                 if (data != null)
@@ -1091,19 +1092,19 @@ namespace Aurora.Services
                 return;
             MainConsole.Instance.Commands.AddCommand("login level",
                                                      "login level <level>",
-                                                     "Set the minimum user level to log in", HandleLoginCommand);
+                                                     "Set the minimum user level to log in", HandleLoginCommand, false, true);
 
             MainConsole.Instance.Commands.AddCommand("login reset",
                                                      "login reset",
                                                      "Reset the login level to allow all users",
-                                                     HandleLoginCommand);
+                                                     HandleLoginCommand, false, true);
 
             MainConsole.Instance.Commands.AddCommand("login text",
                                                      "login text <text>",
-                                                     "Set the text users will see on login", HandleLoginCommand);
+                                                     "Set the text users will see on login", HandleLoginCommand, false, true);
         }
 
-        protected void HandleLoginCommand(string[] cmd)
+        protected void HandleLoginCommand(IScene scene, string[] cmd)
         {
             string subcommand = cmd[1];
 

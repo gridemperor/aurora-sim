@@ -26,6 +26,7 @@
  */
 
 using Aurora.Framework;
+using Aurora.Framework.ClientInterfaces;
 using Aurora.Framework.ConsoleFramework;
 using Aurora.Framework.Modules;
 using Aurora.Framework.SceneInfo;
@@ -465,6 +466,8 @@ namespace Aurora.Region.Serialization
             m_SOPXmlProcessors.Add("APIDIterations", ((sop, xml) => GenericInt(sop, xml, "APIDIterations", sopType)));
             m_SOPXmlProcessors.Add("APIDEnabled", ((sop, xml) => GenericBool(sop, xml, "APIDEnabled", sopType)));
             m_SOPXmlProcessors.Add("Damage", ((sop, xml) => GenericFloat(sop, xml, "Damage", sopType)));
+            m_SOPXmlProcessors.Add("StateSave", ((sop, xml) => ReadProtobuf<Dictionary<UUID, StateSave>>(sop, xml, "StateSaves", sopType)));
+            m_SOPXmlProcessors.Add("KeyframeAnimation", ((sop, xml) => ReadProtobuf<KeyframeAnimation>(sop, xml, "KeyframeAnimation", sopType)));
 
             #endregion
 
@@ -727,8 +730,19 @@ namespace Aurora.Region.Serialization
             writer.WriteElementString("APIDIterations", sop.APIDIterations.ToString());
             writer.WriteElementString("APIDEnabled", sop.APIDEnabled.ToString().ToLower());
             writer.WriteElementString("Damage", sop.Damage.ToString());
+            
+            using(MemoryStream stream = new MemoryStream())
+            {
+                ProtoBuf.Serializer.Serialize<Dictionary<UUID, StateSave>>(stream, sop.StateSaves);
+                writer.WriteElementString("StateSave", Convert.ToBase64String(stream.ToArray()));
+            }
 
-
+            using(MemoryStream stream = new MemoryStream())
+            {
+                ProtoBuf.Serializer.Serialize<KeyframeAnimation>(stream, sop.KeyframeAnimation);
+                writer.WriteElementString("KeyframeAnimation", Convert.ToBase64String(stream.ToArray()));
+            }
+             
             //Write the generic elements last
             foreach (KeyValuePair<string, Serialization> kvp in m_genericSerializers)
             {
@@ -1533,6 +1547,24 @@ namespace Aurora.Region.Serialization
         {
             SOPType.GetProperty(name)
                    .SetValue(obj, float.Parse(reader.ReadElementContentAsString(name, String.Empty)), null);
+        }
+
+        private void ReadProtobuf<T>(SceneObjectPart obj, XmlTextReader reader, string name, Type SOPType)
+        {
+            try
+            {
+                byte[] bytes = Convert.FromBase64String(reader.ReadElementString());
+                using (MemoryStream stream = new MemoryStream(bytes))
+                {
+                    T list = ProtoBuf.Serializer.Deserialize<T>(stream);
+                    if (list != null)
+                        SOPType.GetProperty(name).SetValue(obj, list, null);
+                }
+            }
+            catch (Exception ex)
+            {
+                MainConsole.Instance.Debug("[SceneObjectSerializer]: Failed to parse " + name + ": " + ex.ToString());
+            }
         }
 
         private void GenericByte(SceneObjectPart obj, XmlTextReader reader, string name, Type SOPType)

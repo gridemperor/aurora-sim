@@ -7187,7 +7187,7 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID))
                 return new LSL_Float();
 
-            ISimFrameMonitor reporter = World.RequestModuleInterface<IMonitorModule>().GetMonitor<ISimFrameMonitor>();
+            ISimFrameMonitor reporter = World.RequestModuleInterface<IMonitorModule>().GetMonitor<ISimFrameMonitor>(World);
             if (reporter != null)
                 return reporter.LastReportedSimFPS;
             return 0;
@@ -11844,12 +11844,27 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
         public void llSetContentType(LSL_Key id, LSL_Integer type)
         {
             if (!ScriptProtection.CheckThreatLevel(ThreatLevel.None, "LSL", m_host, "LSL", m_itemID)) return;
-
+            
             string content_type = "text/plain";
-            if (type == ScriptBaseClass.CONTENT_TYPE_TEXT)
-                content_type = "text/plain";
-            else if (type == ScriptBaseClass.CONTENT_TYPE_HTML)
+
+            if (type == ScriptBaseClass.CONTENT_TYPE_HTML)
                 content_type = "text/html";
+            else if (type == ScriptBaseClass.CONTENT_TYPE_XML)
+                content_type = "application/xml";
+            else if (type == ScriptBaseClass.CONTENT_TYPE_XHTML)
+                content_type = "application/xhtml+xml";
+            else if (type == ScriptBaseClass.CONTENT_TYPE_ATOM)
+                content_type = "application/atom+xml";
+            else if (type == ScriptBaseClass.CONTENT_TYPE_JSON)
+                content_type = "application/json";
+            else if (type == ScriptBaseClass.CONTENT_TYPE_LLSD)
+                content_type = "application/llsd+xml";
+            else if (type == ScriptBaseClass.CONTENT_TYPE_FORM)
+                content_type = "application/x-www-form-urlencoded";
+            else if (type == ScriptBaseClass.CONTENT_TYPE_RSS)
+                content_type = "application/rss+xml";
+            else
+                content_type = "text/plain";
 
             if (m_UrlModule != null)
                 m_UrlModule.SetContentType(id, content_type);
@@ -12456,7 +12471,11 @@ namespace Aurora.ScriptEngine.AuroraDotNetEngine.APIs
 
         private bool InBoundingBox(IScenePresence avatar, Vector3 point)
         {
-            float height = avatar.RequestModuleInterface<IAvatarAppearanceModule>().Appearance.AvatarHeight;
+            IAvatarAppearanceModule appModule = avatar.RequestModuleInterface<IAvatarAppearanceModule>();
+            if (appModule == null || appModule.Appearance == null)
+                return false;
+
+            float height = appModule.Appearance.AvatarHeight;
             Vector3 b1 = avatar.AbsolutePosition + new Vector3(-0.22f, -0.22f, -height / 2);
             Vector3 b2 = avatar.AbsolutePosition + new Vector3(0.22f, 0.22f, height / 2);
 
